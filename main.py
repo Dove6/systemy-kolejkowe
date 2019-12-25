@@ -1,10 +1,25 @@
 from office import get_office_list
 from urllib.request import urlopen
+from urllib.parse import urlencode
 import json
-from pprint import pprint
 
 
-base_url = 'https://api.um.warszawa.pl/api/action/wsstore_get/?id='
+def append_parameters(url, params):
+    if '?' in url:
+        if '=' in url:
+            url += '&'
+    else:
+        url += '?'
+    url += urlencode(params)
+    return url
+
+
+base_url = 'https://api.um.warszawa.pl/api/action/wsstore_get/'
+with open('apikey') as apikey:
+    parameters = {
+        'id': '',
+        'apikey': apikey.read().strip()
+    }
 office_list = sorted(get_office_list(), key=lambda x: x['name'])
 
 print('[LISTA URZĘDÓW]')
@@ -17,7 +32,8 @@ if chosen_one > len(office_list) or chosen_one < 0:
     exit()
 
 print('\nWybrany urząd:', office_list[chosen_one]['name'])
-request = urlopen(base_url + office_list[chosen_one]['id'])
+parameters['id'] = office_list[chosen_one]['id']
+request = urlopen(append_parameters(base_url, parameters))
 response = request.read().decode('utf-8').strip()
 data = json.loads(response)
 if data['result'] == 'false':
