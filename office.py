@@ -1,26 +1,44 @@
 from html.parser import HTMLParser
 from urllib.request import urlopen
 
+
 class OfficeListParser(HTMLParser):
+
     def __init__(self):
         super().__init__()
-        self._in_tag = False
+        self._found_id = False
+        self._awaiting_name = False
         self._offices = []
+
     def handle_starttag(self, tag, attrs):
+        sought = {
+            'class': 'show_example',
+            'role': 'wsstore_api_info#https://api.um.warszawa.pl/api/action'
+        }
         if tag == 'div':
             attrs = dict(attrs)
             if set(['role', 'class', 'id']).issubset(set(attrs.keys())):
-                if attrs['class'] == 'show_example' and attrs['role'] == 'wsstore_api_info#https://api.um.warszawa.pl/api/action':
+                if attrs['class'] == sought['class'] and attrs['role'] == sought['role']:
                     self._offices.append({'name': None, 'id': attrs['id']})
-                    self._in_tag = True
+                    self._found_id = True
+
     def handle_data(self, data):
-        if self._in_tag:
-            self._offices[len(self._offices) - 1]['name'] = data.strip()
+        data = data.strip()
+        if data != '':
+            if self._awaiting_name:
+                self._offices[len(self._offices) - 1]['name'] = data
+                self._found_id = False
+                self._awaiting_name = False
+            elif self._found_id:
+                if data == 'Opis danych':
+                    self._awaiting_name = True
+
     def handle_endtag(self, tag):
-        if self._in_tag:
-            self._in_tag = False
+        pass  # do nothing
+
     def handle_startendtag(self, tag, attrs):
-        pass
+        pass  # do nothing
+
     def feed(self, data):
         super().feed(data)
         return self._offices
