@@ -2,3 +2,4 @@ nppBackup
 login
 apikey
 __pycache__
+cache.db
