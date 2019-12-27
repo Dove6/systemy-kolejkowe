@@ -1,5 +1,4 @@
 import sqlite3
-import os
 
 
 connection = sqlite3.connect('cache.db')
@@ -35,4 +34,29 @@ cursor.execute('''
 ''')
 
 cursor.commit()
+
+cursor.execute('''
+    DELETE FROM samples
+    WHERE DATETIME(time) < DATETIME('now', 'localtime', '-1 hour')
+''')
+
+cursor.execute('''
+    SELECT *
+    FROM offices
+''')
+
+cursor.execute('''
+    SELECT *
+    FROM matters
+''')
+
+cursor.execute('''
+    SELECT *
+    FROM samples
+''')
+
+cursor.execute('''
+    INSERT INTO 
+''')
+
 connection.close()
