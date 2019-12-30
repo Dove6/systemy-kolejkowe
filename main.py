@@ -1,27 +1,17 @@
-from office import get_office_list
-from urllib.request import urlopen
-from urllib.parse import urlencode
-import json
+from api import get_office_list, get_matter_list, APIError
+from gui import HiDpiApplication, MainWindow
 
 
-def append_parameters(url, params):
-    if '?' in url:
-        if '=' in url:
-            url += '&'
-    else:
-        url += '?'
-    url += urlencode(params)
-    return url
+application = HiDpiApplication([])
+window = MainWindow()
 
-
-base_url = 'https://api.um.warszawa.pl/api/action/wsstore_get/'
-with open('apikey') as apikey:
-    parameters = {
-        'id': '',
-        'apikey': apikey.read().strip()
-    }
 office_list = sorted(get_office_list(), key=lambda x: x['name'])
+window.combo_list = [x['name'] for x in office_list]
 
+window.show()
+application.exec_()
+
+# console/test part
 print('[LISTA URZĘDÓW]')
 for index, office in enumerate(map(lambda x: x['name'], office_list)):
     print(f'{index + 1}. {office}')
@@ -32,13 +22,11 @@ if chosen_one > len(office_list) or chosen_one < 0:
     exit()
 
 print('\nWybrany urząd:', office_list[chosen_one]['name'])
-parameters['id'] = office_list[chosen_one]['id']
-request = urlopen(append_parameters(base_url, parameters))
-response = request.read().decode('utf-8').strip()
-data = json.loads(response)
-if data['result'] == 'false':
+try:
+    data = get_matter_list(office_list[chosen_one]['id'])
+except APIError as e:
     print('[BŁĄD]')
-    print(data['error'])
+    print(e)
     exit()
 
 print('[LISTA SPRAW]')

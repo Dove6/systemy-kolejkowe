@@ -1,5 +1,7 @@
 from html.parser import HTMLParser
 from urllib.request import urlopen
+from urllib.parse import urlencode
+import json
 
 
 class OfficeListParser(HTMLParser):
@@ -44,9 +46,39 @@ class OfficeListParser(HTMLParser):
         return self._offices
 
 
+class APIError(Exception):
+    pass
+
+
+def append_parameters(url, params):
+    if '?' in url:
+        if '=' in url:
+            url += '&'
+    else:
+        url += '?'
+    url += urlencode(params)
+    return url
+
+
 def get_office_list():
     url = 'https://api.um.warszawa.pl/daneszcz.php?data=16c404ef084cfaffca59ef14b07dc516'
     request = urlopen(url)
     response = request.read().decode('utf-8')
     parser = OfficeListParser()
     return parser.feed(response)
+
+
+def get_matter_list(office_key):
+    base_url = 'https://api.um.warszawa.pl/api/action/wsstore_get/'
+    with open('apikey') as apikey:
+        parameters = {
+            'id': office_key,
+            'apikey': apikey.read().strip()
+        }
+    request = urlopen(append_parameters(base_url, parameters))
+    response = request.read().decode('utf-8').strip()
+    data = json.loads(response)
+    if data['result'] == 'false':
+        raise APIError(data['error'])
+    else:
+        return data

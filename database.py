@@ -7,6 +7,7 @@ class SQLite3Cursor:
         self._kwargs = kwargs
     def __enter__(self):
         self._connection = sqlite3.connect(*self._args, *self._kwargs)
+        self._connection.row_factory = sqlite3.Row
         return self._connection.cursor()
     def __exit__(self, exc_type, exc_value, exc_traceback):
         if exc_type is None and exc_value is None and exc_traceback is None:
@@ -17,40 +18,38 @@ class SQLite3Cursor:
         return False
 
 
-cursor.execute('''
-    CREATE TABLE IF NOT EXISTS offices (
-        id INTEGER PRIMARY KEY,
-        name TEXT,
-        key TEXT
-    )
-''')
+def init_tables(cursor):
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS offices (
+            id INTEGER PRIMARY KEY,
+            name TEXT,
+            key TEXT
+        )
+    ''')
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS matters (
+            id INTEGER PRIMARY KEY,
+            name TEXT,
+            ordinal INT,
+            group_id INT,
+            office_id INTEGER NOT NULL,
+            FOREIGN KEY (office_id)
+                REFERENCES offices (id)
+        )
+    ''')
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS samples (
+            time TEXT NOT NULL,
+            matter_id INTEGER NOT NULL,
+            open_counters INTEGER,
+            queue_length INTEGER,
+            PRIMARY KEY (time, matter_id),
+            FOREIGN KEY (matter_id)
+                REFERENCES matters (id)
+        )
+    ''')
 
-cursor.execute('''
-    CREATE TABLE IF NOT EXISTS matters (
-        id INTEGER PRIMARY KEY,
-        name TEXT,
-        ordinal INT,
-        group_id INT,
-        office_id INTEGER NOT NULL,
-        FOREIGN KEY (office_id)
-            REFERENCES offices (id)
-    )
-''')
-
-cursor.execute('''
-    CREATE TABLE IF NOT EXISTS samples (
-        time TEXT NOT NULL,
-        matter_id INTEGER NOT NULL,
-        open_counters INTEGER,
-        queue_length INTEGER,
-        PRIMARY KEY (time, matter_id),
-        FOREIGN KEY (matter_id)
-            REFERENCES matters (id)
-    )
-''')
-
-cursor.commit()
-
+def 
 cursor.execute('''
     SELECT *
     FROM offices

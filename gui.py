@@ -3,6 +3,15 @@ from PyQt5.QtCore import Qt
 from PyQt5.QtChart import QChart, QChartView, QLineSeries
 
 
+class HiDpiApplication(QApplication):
+    def __init__(self, *args, **kwargs):
+        # enable support for hi-dpi screens (https://leomoon.com/journal/python/high-dpi-scaling-in-pyqt5/)
+        QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
+        QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
+
+        super().__init__(*args, **kwargs)
+
+
 class MainWindow(QMainWindow):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -65,14 +74,3 @@ class MainWindow(QMainWindow):
 
 class Popup(QWidget):
     pass
-
-
-# Enable support for hi-dpi screens (https://leomoon.com/journal/python/high-dpi-scaling-in-pyqt5/)
-QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
-QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
-
-application = QApplication([])
-
-window = MainWindow()
-window.show()
-application.exec_()
