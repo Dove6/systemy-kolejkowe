@@ -1,15 +1,26 @@
 from api import get_office_list, get_matter_list, APIError
 from gui import HiDpiApplication, MainWindow
+from PyQt5.QtCore import QPointF
 
 
 application = HiDpiApplication([])
 window = MainWindow()
 
+def combo_callback(item_index):
+    window.killTimer()
+    matter_list = get_matter_list(window.combo_box.itemData(item_index))
+    window.chart.setSeriesCount(len(matter_list['result']['grupy']))
+    for index, group in enumerate(matter_list['result']['grupy']):
+        window.chart.series()[index] << QPointF(60, group['liczbaKlwKolejce'])
+    window.startTimer(60000)
+
 office_list = sorted(get_office_list(), key=lambda x: x['name'])
-window.combo_list = [x['name'] for x in office_list]
+window.combo_box.setItems([x['name'] for x in office_list], [x['id'] for x in office_list])
+window.combo_box.currentIndexChanged.connect(combo_callback)
 
 window.show()
 application.exec_()
+window.killTimer()
 
 # console/test part
 print('[LISTA URZĘDÓW]')

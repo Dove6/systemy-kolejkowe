@@ -1,6 +1,7 @@
 from PyQt5.QtWidgets import QApplication, QMainWindow, QComboBox, QLabel, QTableWidget, QVBoxLayout, QWidget
-from PyQt5.QtCore import Qt
-from PyQt5.QtChart import QChart, QChartView, QLineSeries
+from PyQt5.QtCore import Qt, QPointF
+from PyQt5.QtChart import QChart, QChartView, QLineSeries, QValueAxis
+from api import get_matter_list
 
 
 class HiDpiApplication(QApplication):
@@ -12,6 +13,75 @@ class HiDpiApplication(QApplication):
         super().__init__(*args, **kwargs)
 
 
+class ComboBox(QComboBox):
+    def itemsTexts(self):
+        texts = []
+        for index in range(self.count()):
+            texts.append(self.itemText(index))
+        return texts
+
+    def itemsData(self):
+        data = []
+        for index in range(self.count()):
+            data.append(self.itemData(index))
+        return data
+
+    def setItems(self, texts, data=None):
+        self.clear()
+        self.addItems(texts)
+        if data is not None:
+            if len(texts) == len(data):
+                for index in range(self.count()):
+                    self.setItemData(index, data[index])
+
+
+class LineChart(QChart):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        x_axis = QValueAxis()
+        x_axis.setRange(0, 60)
+        x_axis.setTickCount(7)
+        self.addAxis(x_axis, Qt.AlignBottom)
+        y_axis = QValueAxis()
+        y_axis.setRange(0, 20)
+        self.addAxis(y_axis, Qt.AlignLeft)
+
+    def setSeriesCount(self, count):
+        self.removeAllSeries()
+        for i in range(count):
+            series = LineSeries()
+            self.addSeries(series)
+            for axis in self.axes():
+                series.attachAxis(axis)
+
+
+class LineSeries(QLineSeries):
+    def movePoints(self, x=0, y=0, truncate=False):
+        if x != 0 or y != 0:
+            points = self.pointsVector()
+            for point in points:
+                point.setX(point.x() + x)
+                point.setY(point.y() + y)
+            if truncate:
+                if x < 0:
+                    min_x = min([point.x() for point in points])
+                    min_x -= x
+                    points = filter(lambda point: point.x() >= min_x, points)
+                elif x > 0:
+                    max_x = max([point.x() for point in points])
+                    max_x -= x
+                    points = filter(lambda point: point.x() <= max_x, points)
+                if y < 0:
+                    min_y = min([point.y() for point in points])
+                    min_y -= y
+                    points = filter(lambda point: point.y() >= min_y, points)
+                elif y > 0:
+                    max_y = max([point.y() for point in points])
+                    max_y -= y
+                    points = filter(lambda point: point.y() <= max_y, points)
+            self.replace(points)
+
+
 class MainWindow(QMainWindow):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -21,9 +91,9 @@ class MainWindow(QMainWindow):
         self._combo_list = []
         self._chart_series = []
 
-        self._combo = QComboBox()
+        self._combo = ComboBox()
 
-        self._chart = QChart()
+        self._chart = LineChart()
         self._chart.setTitle('Tytuł')
         self._chart.legend().setVisible(False)
         self._chart_view = QChartView()
@@ -40,6 +110,30 @@ class MainWindow(QMainWindow):
         self._main_widget.setLayout(self._vbox_layout)
         self.setCentralWidget(self._main_widget)
 
+        self._timer_id = None
+
+    def startTimer(self, interval):
+        if self._timer_id is None:
+            self._timer_id = super().startTimer(interval)
+        else:
+            raise AssertionError('Timer already in use')
+
+    def killTimer(self):
+        if self._timer_id is not None:
+            super().killTimer(self._timer_id)
+            self._timer_id = None
+
+    def timerEvent(self, event):
+        print(event)
+        if self._timer_id is not None and event.timerId() == self._timer_id:
+            matter_list = get_matter_list(self.combo_box.currentData())
+            for index, group in enumerate(matter_list['result']['grupy']):
+                self.chart.series()[index].movePoints(-1)
+                self.chart.series()[index] << QPointF(60, group['liczbaKlwKolejce'])
+                print(self.chart.series()[index].pointsVector())
+        else:
+            super().timerEvent(event)
+
     def _update_chart(self):
         self._chart.removeAllSeries()
         for series in self._chart_series:
@@ -50,26 +144,12 @@ class MainWindow(QMainWindow):
         self._chart.createDefaultAxes()
 
     @property
-    def chart_series(self):
-        return self._chart_series[:]
-
-    @chart_series.setter
-    def chart_series(self, value):
-        self._chart_series = value[:]
-        self._update_chart()
-
-    def _update_combo(self):
-        self._combo.clear()
-        self._combo.addItems(self._combo_list)
+    def chart(self):
+        return self._chart
 
     @property
-    def combo_list(self):
-        return self._combo_list[:]
-
-    @combo_list.setter
-    def combo_list(self, value):
-        self._combo_list = value[:]
-        self._update_combo()
+    def combo_box(self):
+        return self._combo
 
 
 class Popup(QWidget):
