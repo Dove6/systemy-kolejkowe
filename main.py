@@ -1,6 +1,7 @@
 from api import get_office_list, get_matter_list, APIError
 from gui import HiDpiApplication, MainWindow
-from PyQt5.QtCore import QPointF
+from PyQt5.QtWidgets import QTableWidgetItem
+from PyQt5.QtCore import Qt, QPointF
 
 
 application = HiDpiApplication([])
@@ -10,9 +11,22 @@ def combo_callback(item_index):
     window.killTimer()
     matter_list = get_matter_list(window.combo_box.itemData(item_index))
     window.chart.setSeriesCount(len(matter_list['result']['grupy']))
+    window.table.setRowCount(len(matter_list['result']['grupy']))
     for index, group in enumerate(matter_list['result']['grupy']):
         window.chart.series()[index] << QPointF(60, group['liczbaKlwKolejce'])
+        window.table.setItem(index, 0, QTableWidgetItem(str(index + 1)))
+        window.table.item(index, 0).setForeground(window.chart.series()[index].color())
+        window.table.item(index, 0).setTextAlignment(Qt.AlignRight)
+        window.table.setItem(index, 1, QTableWidgetItem(group['nazwaGrupy']))
+        window.table.item(index, 1).setTextAlignment(Qt.AlignLeft)
+        window.table.setItem(index, 2, QTableWidgetItem(str(group['liczbaCzynnychStan'])))
+        window.table.item(index, 2).setTextAlignment(Qt.AlignCenter)
+        window.table.setItem(index, 3, QTableWidgetItem(str(group['liczbaKlwKolejce'])))
+        window.table.item(index, 3).setTextAlignment(Qt.AlignCenter)
+        window.table.setItem(index, 4, QTableWidgetItem(group['aktualnyNumer']))
+        window.table.item(index, 4).setTextAlignment(Qt.AlignCenter)
     window.startTimer(60000)
+
 
 office_list = sorted(get_office_list(), key=lambda x: x['name'])
 window.combo_box.setItems([x['name'] for x in office_list], [x['id'] for x in office_list])
@@ -20,7 +34,7 @@ window.combo_box.currentIndexChanged.connect(combo_callback)
 
 window.show()
 application.exec_()
-window.killTimer()
+exit()
 
 # console/test part
 print('[LISTA URZĘDÓW]')
