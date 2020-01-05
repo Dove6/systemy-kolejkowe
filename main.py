@@ -1,15 +1,20 @@
-from api import get_office_list, get_matter_list, APIError
+from database import SQLite3Cursor, init_tables, get_office_list, get_matter_list
+from api import APIError
 from gui import HiDpiApplication, MainWindow
 from PyQt5.QtWidgets import QTableWidgetItem
 from PyQt5.QtCore import Qt, QPointF
 
 
+with SQLite3Cursor('cache.db') as cursor:
+    init_tables(cursor)
 application = HiDpiApplication([])
 window = MainWindow()
 
+
 def combo_callback(item_index):
     window.killTimer()
-    matter_list = get_matter_list(window.combo_box.itemData(item_index))
+    with SQLite3Cursor('cache.db') as cursor:
+        matter_list = get_matter_list(cursor, window.combo_box.itemData(item_index))
     window.chart.setSeriesCount(len(matter_list['result']['grupy']))
     window.table.setRowCount(len(matter_list['result']['grupy']))
     for index, group in enumerate(matter_list['result']['grupy']):
@@ -28,8 +33,9 @@ def combo_callback(item_index):
     window.startTimer(60000)
 
 
-office_list = sorted(get_office_list(), key=lambda x: x['name'])
-window.combo_box.setItems([x['name'] for x in office_list], [x['id'] for x in office_list])
+with SQLite3Cursor('cache.db') as cursor:
+    office_list = sorted(get_office_list(cursor), key=lambda x: x['name'])
+window.combo_box.setItems([x['name'] for x in office_list], [x['key'] for x in office_list])
 window.combo_box.currentIndexChanged.connect(combo_callback)
 
 window.show()

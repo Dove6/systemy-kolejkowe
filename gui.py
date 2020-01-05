@@ -1,7 +1,7 @@
 from PyQt5.QtWidgets import QApplication, QMainWindow, QComboBox, QLabel, QTableWidget, QVBoxLayout, QWidget, QAbstractItemView, QHeaderView
 from PyQt5.QtCore import Qt, QPointF
 from PyQt5.QtChart import QChart, QChartView, QLineSeries, QValueAxis
-from api import get_matter_list
+from database import SQLite3Cursor, get_matter_list
 
 
 class HiDpiApplication(QApplication):
@@ -137,7 +137,8 @@ class MainWindow(QMainWindow):
     def timerEvent(self, event):
         print(event)
         if self._timer_id is not None and event.timerId() == self._timer_id:
-            matter_list = get_matter_list(self.combo_box.currentData())
+            with SQLite3Cursor('cache.db') as cursor:
+                matter_list = get_matter_list(cursor, self.combo_box.currentData())
             for index, group in enumerate(matter_list['result']['grupy']):
                 self.chart.series()[index].movePoints(-1)
                 self.chart.series()[index] << QPointF(60, group['liczbaKlwKolejce'])

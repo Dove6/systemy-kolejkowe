@@ -21,7 +21,7 @@ class OfficeListParser(HTMLParser):
             attrs = dict(attrs)
             if set(['role', 'class', 'id']).issubset(set(attrs.keys())):
                 if attrs['class'] == sought['class'] and attrs['role'] == sought['role']:
-                    self._offices.append({'name': None, 'id': attrs['id']})
+                    self._offices.append({'name': None, 'key': attrs['id']})
                     self._found_id = True
 
     def handle_data(self, data):
@@ -62,7 +62,7 @@ def append_parameters(url, params):
 
 def get_office_list():
     url = 'https://api.um.warszawa.pl/daneszcz.php?data=16c404ef084cfaffca59ef14b07dc516'
-    request = urlopen(url)
+    request = urlopen(url, timeout=2)
     response = request.read().decode('utf-8')
     parser = OfficeListParser()
     return parser.feed(response)
@@ -75,7 +75,7 @@ def get_matter_list(office_key):
             'id': office_key,
             'apikey': apikey.read().strip()
         }
-    request = urlopen(append_parameters(base_url, parameters))
+    request = urlopen(append_parameters(base_url, parameters), timeout=2)
     response = request.read().decode('utf-8').strip()
     data = json.loads(response)
     if data['result'] == 'false':
