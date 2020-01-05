@@ -83,15 +83,6 @@ error = '"', nonempty_string, '"'
         'name': nazwaGrupy,                  //str
         'ordinal': lp,                       //int / None
         'group_id': idGrupy                  //int
-    },
-    ...
-]
-```
-
-3. lista zwracana przez WSStoreAPI.get_sample_list()
-```json
-[
-    {
         'queue_length': liczbaKlwKolejce,    //int
         'open_counters': liczbaCzynnychStan, //int
         'current_number': aktualnyNumer,     //str

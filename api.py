@@ -89,29 +89,11 @@ class WSStoreAPI:
         return [{
             'name': str(group['nazwaGrupy']),
             'ordinal': int(group['lp']) if group['lp'] is not None else None,
-            'group_id': int(group['idGrupy'])
-        } for group in data['result']['grupy']]
-
-    def get_sample_list(self, office_key: str, matter_id: dict) -> list:
-        if not set(['ordinal', 'group_id']).issubset(set(matter_id.keys())):
-            raise AssertionError('Dictionary must contain "ordinal" and "group_id" keys')
-        with open('apikey') as apikey:
-            parameters = {
-                'id': office_key,
-                'apikey': apikey.read().strip()
-            }
-        request = urlopen(append_parameters(self._urls['json'], parameters), timeout=2)
-        response = request.read().decode('utf-8').strip()
-        data = json.loads(response)
-        if data['result'] == 'false':
-            raise APIError(data['error'])
-        return [{
+            'group_id': int(group['idGrupy']),
             'queue_length': int(group['liczbaKlwKolejce']),
             'open_counters': int(group['liczbaCzynnychStan']),
             'current_number': str(group['aktualnyNumer']),
             'time': str(data['result']['date'] + ' ' + data['result']['time'])
         }
             for group in data['result']['grupy']
-            if str(group['ordinal']) == str(matter_id['ordinal'])
-            and str(group['group_id']) == str(matter_id['group_id'])
         ]

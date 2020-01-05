@@ -88,35 +88,77 @@ class CachedAPI(WSStoreAPI):
                 VALUES (?, ?)
             ''', [(office['name'], office['key']) for office in office_list])
 
-    def get_matter_list(self, office_key: str) -> list:
-        with SQLite3Cursor(self._filename) as cursor:
-            office_id = cursor.execute('''
-                SELECT id
-                FROM offices
-                WHERE key = ?
-            ''', (office_key, )).fetchone()
-            if office_id is None:
-                raise APIError('Incorrect office key')
+    def get_matter_list(self, office_key: str, *, current=True) -> list:
+        if current:
+            with SQLite3Cursor(self._filename) as cursor:
+                office_id = cursor.execute('''
+                    SELECT id
+                    FROM offices
+                    WHERE key = ?
+                ''', (office_key, )).fetchone()
+                if office_id is None:
+                    raise APIError('Incorrect office key')
+                else:
+                    office_id = office_id[0]
+                result = cursor.execute('''
+                    SELECT name, ordinal, group_id, queue_length, open_counters,
+                    current_number, time
+                    FROM matters INNER JOIN samples
+                    ON matters.id = samples.matter_id
+                    WHERE office_id = ? AND (STRFTIME('%s', 'now', 'localtime')
+                    - STRFTIME('%s', time)) <= 60
+                    ORDER BY name, time
+                ''', (office_id, ))
+                cached_list = [{
+                    'name': str(name),
+                    'ordinal': int(ordinal) if ordinal is not None else None,
+                    'group_id': int(group_id),
+                    'queue_length': int(queue_length),
+                    'open_counters': int(open_counters),
+                    'current_number': str(current_number),
+                    'time': str(time)
+                } for name, ordinal, group_id, queue_length, open_counters,
+                    current_number, time in result
+                ]
+            if len(cached_list) == 0:
+                matter_list = super().get_matter_list(office_key)
+                self.store_matter_list(office_key, matter_list)
+                print('[cache miss] matter list')
+                return matter_list
             else:
-                office_id = office_id[0]
-            result = cursor.execute('''
-                SELECT name, ordinal, group_id
-                FROM matters
-                WHERE office_id = ?
-                ORDER BY name
-            ''', (office_id, ))
-            cached_list = [{
-                'name': str(name),
-                'ordinal': int(ordinal) if ordinal is not None else None,
-                'group_id': int(group_id)
-            } for name, ordinal, group_id in result]
-        if len(cached_list) == 0:
-            matter_list = super().get_matter_list(office_key)
-            self.store_matter_list(office_key, matter_list)
-            print('[cache miss] matter list')
-            return matter_list
+                print('[cache hit] matter list')
+                return cached_list
         else:
-            print('[cache hit] matter list')
+            with SQLite3Cursor(self._filename) as cursor:
+                office_id = cursor.execute('''
+                    SELECT id
+                    FROM offices
+                    WHERE key = ?
+                ''', (office_key, )).fetchone()
+                if office_id is None:
+                    raise APIError('Incorrect office key')
+                else:
+                    office_id = office_id[0]
+                result = cursor.execute('''
+                    SELECT name, ordinal, group_id, queue_length, open_counters,
+                    current_number, time
+                    FROM matters INNER JOIN samples
+                    ON matters.id = samples.matter_id
+                    WHERE office_id = ? AND (STRFTIME('%s', 'now', 'localtime')
+                    - STRFTIME('%s', time)) > 60
+                    ORDER BY name, time
+                ''', (office_id, ))
+                cached_list = [{
+                    'name': str(name),
+                    'ordinal': int(ordinal) if ordinal is not None else None,
+                    'group_id': int(group_id),
+                    'queue_length': int(queue_length),
+                    'open_counters': int(open_counters),
+                    'current_number': str(current_number),
+                    'time': str(time)
+                } for name, ordinal, group_id, queue_length, open_counters,
+                    current_number, time in result
+                ]
             return cached_list
 
     def store_matter_list(self, office_key: str, matter_list: list):
@@ -130,105 +172,34 @@ class CachedAPI(WSStoreAPI):
                 raise APIError('Incorrect office key')
             else:
                 office_id = office_id[0]
-            cursor.executemany('''
-                INSERT INTO matters (name, ordinal, group_id, office_id)
-                VALUES (?, ?, ?, ?)
-            ''', [(
-                matter['name'],
-                matter['ordinal'],
-                matter['group_id'],
-                office_id
-            ) for matter in matter_list
-            ])
-
-    def get_sample_list(self, office_key: str, matter_id: dict) -> list:
-        with SQLite3Cursor(self._filename) as cursor:
-            office_id = cursor.execute('''
-                SELECT id
-                FROM offices
-                WHERE key = ?
-            ''', (office_key, )).fetchone()
-            if office_id is None:
-                raise APIError('Incorrect office key')
-            else:
-                office_id = office_id[0]
-            matter_id = cursor.execute('''
-                SELECT id
-                FROM matters
-                WHERE ordinal = ? AND group_id = ? AND office_id = ?
-            ''', (matter_id['ordinal'], matter_id['group_id'], office_id)
-            ).fetchone()
-            if matter_id is None:
-                raise APIError('Incorrect matter id')
-            else:
-                matter_id = matter_id[0]
-            result = cursor.execute('''
-                SELECT time, open_counters, queue_length, current_number
-                FROM samples
-                WHERE matter_id = ?
-                ORDER BY time
-            ''', (matter_id, ))
-            cached_list = [{
-                'queue_length': int(queue_length),
-                'open_counters': int(open_counters),
-                'current_number': str(current_number),
-                'time': str(time)
-            } for time, open_counters, queue_length, current_number in result]
-        if len(cached_list) == 0:
-            sample_list = super().get_sample_list()
-            self.store_sample_list(cursor, office_key, matter_id, sample_list)
-            print('[cache miss] sample list')
-            return sample_list
-        else:
-            print('[cache hit] sample list')
-            return cached_list
-        # cursor.execute('''
-        #     SELECT MAX(time)
-        #     FROM samples
-        #     WHERE matter_id = ?
-        # ''', (int, ))
-
-        # cursor.execute('''
-        #     SELECT (STRFTIME('%s', ?) - STRFTIME('%s', time)) / 60 AS index,
-        #         open_counters, queue_length
-        #     FROM samples
-        #     WHERE matter_id = ?
-        #     ORDER BY index
-        # ''', (str, int))
-
-    def store_sample_list(self, office_key: str, matter_id: dict, sample_list: list):
-        with SQLite3Cursor(self._filename) as cursor:
-            office_id = cursor.execute('''
-                SELECT id
-                FROM offices
-                WHERE key = ?
-            ''', (office_key, )).fetchone()
-            if office_id is None:
-                raise APIError('Incorrect office key')
-            else:
-                office_id = office_id[0]
-            matter_id = cursor.execute('''
-                SELECT id
-                FROM matters
-                WHERE ordinal = ? AND group_id = ? AND office_id = ?
-            ''', (matter_id['ordinal'], matter_id['group_id'], office_id)
-            ).fetchone()
-            if matter_id is None:
-                raise APIError('Incorrect matter id')
-            else:
-                matter_id = matter_id[0]
-            cursor.executemany('''
-                INSERT INTO samples (time, open_counters, queue_length, current_number, matter_id)
-                VALUES (?, ?, ?, ?, ?)
-            ''', [(
-                    sample['time'],
-                    sample['open_counters'],
-                    sample['queue_length'],
-                    sample['current_number'],
+            for matter in matter_list:
+                matter_id = cursor.execute('''
+                    SELECT id
+                    FROM matters
+                    WHERE ordinal = ? AND group_id = ? AND office_id = ?
+                ''', (matter['ordinal'], matter['group_id'], office_id)
+                ).fetchone()
+                if matter_id is None:
+                    cursor.execute('''
+                        INSERT INTO matters (name, ordinal, group_id, office_id)
+                        VALUES (?, ?, ?, ?)
+                    ''', (
+                        matter['name'],
+                        matter['ordinal'],
+                        matter['group_id'],
+                        office_id
+                    ))
+                    matter_id = cursor.lastrowid
+                else:
+                    matter_id = matter_id[0]
+                cursor.execute('''
+                    INSERT INTO samples (time, open_counters, queue_length,
+                    current_number, matter_id)
+                    VALUES (?, ?, ?, ?, ?)
+                ''', (
+                    matter['time'],
+                    matter['open_counters'],
+                    matter['queue_length'],
+                    matter['current_number'],
                     matter_id
-                ) for sample in sample_list
-            ])
-        # cursor.execute('''
-        #     INSERT INTO samples
-        #     VALUES (?, ?, ?, ?)
-        # ''', (str, int, int, int))
+                ))
