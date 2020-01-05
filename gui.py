@@ -1,12 +1,15 @@
-from PyQt5.QtWidgets import QApplication, QMainWindow, QComboBox, QLabel, QTableWidget, QVBoxLayout, QWidget, QAbstractItemView, QHeaderView
-from PyQt5.QtCore import Qt, QPointF
+from PyQt5.QtWidgets import (
+    QApplication, QMainWindow, QComboBox, QTableWidget, QVBoxLayout, QWidget,
+    QAbstractItemView, QHeaderView
+)
+from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtChart import QChart, QChartView, QLineSeries, QValueAxis
-from database import SQLite3Cursor, get_matter_list
 
 
 class HiDpiApplication(QApplication):
     def __init__(self, *args, **kwargs):
-        # enable support for hi-dpi screens (https://leomoon.com/journal/python/high-dpi-scaling-in-pyqt5/)
+        # enable support for hi-dpi screens
+        # https://leomoon.com/journal/python/high-dpi-scaling-in-pyqt5/
         QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
         QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
 
@@ -100,7 +103,13 @@ class MainWindow(QMainWindow):
         self._chart_view.setChart(self._chart)
 
         self._table = QTableWidget(0, 5)
-        self._table.setHorizontalHeaderLabels(['Lp.', 'Nazwa usługi', 'Liczba stanowisk', 'Długość kolejki', 'Aktualny numer'])
+        self._table.setHorizontalHeaderLabels([
+            'Lp.',
+            'Nazwa usługi',
+            'Liczba stanowisk',
+            'Długość kolejki',
+            'Aktualny numer'
+        ])
         self._table.verticalHeader().hide()
         self._table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self._table.setSelectionMode(QAbstractItemView.NoSelection)
@@ -121,34 +130,9 @@ class MainWindow(QMainWindow):
         self._main_widget.setLayout(self._vbox_layout)
         self.setCentralWidget(self._main_widget)
 
-        self._timer_id = None
-
-    def startTimer(self, interval):
-        if self._timer_id is None:
-            self._timer_id = super().startTimer(interval)
-        else:
-            raise AssertionError('Timer already in use')
-
-    def killTimer(self):
-        if self._timer_id is not None:
-            super().killTimer(self._timer_id)
-            self._timer_id = None
-
-    def timerEvent(self, event):
-        print(event)
-        if self._timer_id is not None and event.timerId() == self._timer_id:
-            with SQLite3Cursor('cache.db') as cursor:
-                matter_list = get_matter_list(cursor, self.combo_box.currentData())
-            for index, group in enumerate(matter_list['result']['grupy']):
-                self.chart.series()[index].movePoints(-1)
-                self.chart.series()[index] << QPointF(60, group['liczbaKlwKolejce'])
-                self.table.item(index, 0).setText(str(index + 1))
-                self.table.item(index, 1).setText(group['nazwaGrupy'])
-                self.table.item(index, 2).setText(str(group['liczbaCzynnychStan']))
-                self.table.item(index, 3).setText(str(group['liczbaKlwKolejce']))
-                self.table.item(index, 4).setText(group['aktualnyNumer'])
-        else:
-            super().timerEvent(event)
+        self._timer = QTimer()
+        print('Warning: too short API polling interval')
+        self._timer.setInterval(5000)
 
     def _update_chart(self):
         self._chart.removeAllSeries()
@@ -174,6 +158,10 @@ class MainWindow(QMainWindow):
     @property
     def table(self):
         return self._table
+
+    @property
+    def timer(self):
+        return self._timer
 
 
 class Popup(QWidget):

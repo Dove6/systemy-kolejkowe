@@ -50,7 +50,7 @@ class APIError(Exception):
     pass
 
 
-def append_parameters(url, params):
+def append_parameters(url: str, params: dict) -> str:
     if '?' in url:
         if '=' in url:
             url += '&'
@@ -60,25 +60,31 @@ def append_parameters(url, params):
     return url
 
 
-def get_office_list():
-    url = 'https://api.um.warszawa.pl/daneszcz.php?data=16c404ef084cfaffca59ef14b07dc516'
-    request = urlopen(url, timeout=2)
-    response = request.read().decode('utf-8')
-    parser = OfficeListParser()
-    return parser.feed(response)
+class WSStoreAPI:
+    def __init__(self, base_api_urls=None):
+        if base_api_urls is not None:
+            if not set(['html', 'json']).issubset(set(base_api_urls.keys())):
+                raise AssertionError('Dictionary must contain "html" and "json" keys')
+            self._urls = base_api_urls.copy()
+        else:
+            self._urls = None
 
+    def get_office_list(self) -> list:
+        request = urlopen(self._urls['html'], timeout=2)
+        response = request.read().decode('utf-8')
+        parser = OfficeListParser()
+        return parser.feed(response)
 
-def get_matter_list(office_key):
-    base_url = 'https://api.um.warszawa.pl/api/action/wsstore_get/'
-    with open('apikey') as apikey:
-        parameters = {
-            'id': office_key,
-            'apikey': apikey.read().strip()
-        }
-    request = urlopen(append_parameters(base_url, parameters), timeout=2)
-    response = request.read().decode('utf-8').strip()
-    data = json.loads(response)
-    if data['result'] == 'false':
-        raise APIError(data['error'])
-    else:
-        return data
+    def get_matter_list(self, office_key: str) -> list:
+        with open('apikey') as apikey:
+            parameters = {
+                'id': office_key,
+                'apikey': apikey.read().strip()
+            }
+        request = urlopen(append_parameters(self._urls['json'], parameters), timeout=2)
+        response = request.read().decode('utf-8').strip()
+        data = json.loads(response)
+        if data['result'] == 'false':
+            raise APIError(data['error'])
+        else:
+            return data
