@@ -63,3 +63,40 @@ error = '"', nonempty_string, '"'
     "error": error
 }
 ```
+
+# Budowa wewnętrznych struktur danych
+1. lista zwracana przez WSStoreAPI.get_office_list()
+```json
+[
+    {
+        'name': 'nazwa urzędu',             //str
+        'key': 'identyfikator-api-urzedu'   //str
+    },
+    ...
+]
+```
+
+2. lista zwracana przez WSStoreAPI.get_matter_list()
+```json
+[
+    {
+        'name': nazwaGrupy,                  //str
+        'ordinal': lp,                       //int / None
+        'group_id': idGrupy                  //int
+    },
+    ...
+]
+```
+
+3. lista zwracana przez WSStoreAPI.get_sample_list()
+```json
+[
+    {
+        'queue_length': liczbaKlwKolejce,    //int
+        'open_counters': liczbaCzynnychStan, //int
+        'current_number': aktualnyNumer,     //str
+        'time': date time                    //str
+    },
+    ...
+]
+```
