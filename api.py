@@ -86,14 +86,32 @@ class WSStoreAPI:
         data = json.loads(response)
         if data['result'] == 'false':
             raise APIError(data['error'])
-        return [{
+        return sorted([{
             'name': str(group['nazwaGrupy']),
             'ordinal': int(group['lp']) if group['lp'] is not None else None,
-            'group_id': int(group['idGrupy']),
+            'group_id': int(group['idGrupy'])
+        }
+            for group in data['result']['grupy']
+        ], key=lambda matter: matter['name'])
+
+    def get_sample_list(self, office_key: str, matter_ordinal, matter_group_id) -> list:
+        with open('apikey') as apikey:
+            parameters = {
+                'id': office_key,
+                'apikey': apikey.read().strip()
+            }
+        request = urlopen(append_parameters(self._urls['json'], parameters), timeout=2)
+        response = request.read().decode('utf-8').strip()
+        data = json.loads(response)
+        if data['result'] == 'false':
+            raise APIError(data['error'])
+        return [{
             'queue_length': int(group['liczbaKlwKolejce']),
             'open_counters': int(group['liczbaCzynnychStan']),
             'current_number': str(group['aktualnyNumer']),
             'time': str(data['result']['date'] + ' ' + data['result']['time'])
         }
             for group in data['result']['grupy']
+            if str(matter_ordinal) == str(group['lp'])
+            and int(matter_group_id) == int(group['idGrupy'])
         ]

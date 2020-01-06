@@ -2,8 +2,8 @@ from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QComboBox, QTableWidget, QVBoxLayout, QWidget,
     QAbstractItemView, QHeaderView
 )
-from PyQt5.QtCore import Qt, QTimer
-from PyQt5.QtChart import QChart, QChartView, QLineSeries, QValueAxis
+from PyQt5.QtCore import Qt, QTimer, QDateTime
+from PyQt5.QtChart import QChart, QChartView, QLineSeries, QValueAxis, QDateTimeAxis
 
 
 class HiDpiApplication(QApplication):
@@ -41,8 +41,8 @@ class ComboBox(QComboBox):
 class LineChart(QChart):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        x_axis = QValueAxis()
-        x_axis.setRange(0, 60)
+        x_axis = QDateTimeAxis()
+        x_axis.setFormat('hh:mm')
         x_axis.setTickCount(7)
         self.addAxis(x_axis, Qt.AlignBottom)
         y_axis = QValueAxis()
@@ -59,6 +59,10 @@ class LineChart(QChart):
 
 
 class LineSeries(QLineSeries):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._data = {}
+
     def movePoints(self, x=0, y=0, truncate=False):
         if x != 0 or y != 0:
             points = self.pointsVector()
@@ -83,6 +87,19 @@ class LineSeries(QLineSeries):
                     max_y -= y
                     points = filter(lambda point: point.y() <= max_y, points)
             self.replace(points)
+
+    def __lshift__(self, *args, **kwargs):
+        super().__lshift__(*args, **kwargs)
+        max_time = QDateTime.fromMSecsSinceEpoch(max(self.pointsVector(), key=lambda point: point.x()).x())
+        self.attachedAxes()[0].setRange(max_time.addSecs(-3600), max_time)
+        self.attachedAxes()[0].hide()
+        self.attachedAxes()[0].show()
+
+    def data(self, role=Qt.UserRole):
+        return self._data.get(role)
+
+    def setData(self, value, role=Qt.UserRole):
+        self._data[role] = value
 
 
 class MainWindow(QMainWindow):
@@ -119,7 +136,12 @@ class MainWindow(QMainWindow):
         self._table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
         self._table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeToContents)
         self._table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeToContents)
-        self._table.horizontalHeader().model().setHeaderData(1, Qt.Horizontal, Qt.AlignLeft, Qt.TextAlignmentRole)
+        self._table.horizontalHeader().model().setHeaderData(
+            1,
+            Qt.Horizontal,
+            Qt.AlignLeft | Qt.AlignVCenter,
+            Qt.TextAlignmentRole
+        )
 
         self._vbox_layout = QVBoxLayout()
         self._vbox_layout.addWidget(self._combo)
@@ -133,15 +155,6 @@ class MainWindow(QMainWindow):
         self._timer = QTimer()
         print('Warning: too short API polling interval')
         self._timer.setInterval(5000)
-
-    def _update_chart(self):
-        self._chart.removeAllSeries()
-        for series in self._chart_series:
-            line_series = QLineSeries()
-            for point in series:
-                line_series.append(*point)
-            self._chart.addSeries(line_series)
-        self._chart.createDefaultAxes()
 
     def close(self):
         self.killTimer()
