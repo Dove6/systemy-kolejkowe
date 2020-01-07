@@ -16,9 +16,10 @@ window = MainWindow()
 
 def combo_callback(item_index):
     window.timer.stop()
-    office_key = window.combo_box.itemData(item_index)
+    api.office_key = window.combo_box.itemData(item_index)
     try:
-        matter_list = api.get_matter_list(office_key)
+        api.update()
+        matter_list = api.get_matter_list()
         window.chart.setSeriesCount(len(matter_list))
         window.table.setRowCount(len(matter_list))
         for index, matter in enumerate(matter_list):
@@ -28,7 +29,7 @@ def combo_callback(item_index):
             window.table.item(index, 0).setTextAlignment(int(Qt.AlignRight | Qt.AlignVCenter))
             window.table.setItem(index, 1, QTableWidgetItem(matter['name']))
             window.table.item(index, 1).setTextAlignment(int(Qt.AlignLeft | Qt.AlignVCenter))
-            sample_list = api.get_sample_list(office_key, matter['ordinal'], matter['group_id'])
+            sample_list = api.get_sample_list(matter['ordinal'], matter['group_id'])
             for sample in sample_list:
                 window.chart.series()[index] << QPointF(
                     QDateTime.fromString(sample['time'], 'yyyy-MM-dd hh:mm').toMSecsSinceEpoch(),
@@ -48,19 +49,24 @@ def combo_callback(item_index):
 
 
 def timer_callback():
-    office_key = window.combo_box.currentData()
-    matter_key_list = map(lambda series: series.data(), window.chart.series())
-    for index, matter_key in enumerate(matter_key_list):
-        sample_list = api.get_sample_list(office_key, matter_key[0], matter_key[1])
-        for sample in sample_list:
-            window.chart.series()[index].movePoints(-1)
-            window.chart.series()[index] << QPointF(
-                QDateTime.fromString(sample['time'], 'yyyy-MM-dd hh:mm').toMSecsSinceEpoch(),
-                sample['queue_length']
-            )
-            window.table.item(index, 2).setText(str(sample['open_counters']))
-            window.table.item(index, 3).setText(str(sample['queue_length']))
-            window.table.item(index, 4).setText(sample['current_number'])
+    try:
+        api.update()
+        matter_key_list = map(lambda series: series.data(), window.chart.series())
+        for index, matter_key in enumerate(matter_key_list):
+            sample_list = api.get_sample_list(matter_key[0], matter_key[1])
+            for sample in sample_list:
+                window.chart.series()[index].movePoints(-1)
+                window.chart.series()[index] << QPointF(
+                    QDateTime.fromString(sample['time'], 'yyyy-MM-dd hh:mm').toMSecsSinceEpoch(),
+                    sample['queue_length']
+                )
+                window.table.item(index, 2).setText(str(sample['open_counters']))
+                window.table.item(index, 3).setText(str(sample['queue_length']))
+                window.table.item(index, 4).setText(sample['current_number'])
+    except APIError as e:
+        print('[BŁĄD]')
+        print(e)
+        exit()
 
 
 office_list = sorted(api.get_office_list(), key=lambda x: x['name'])

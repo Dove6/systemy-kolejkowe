@@ -65,7 +65,7 @@ error = '"', nonempty_string, '"'
 ```
 
 # Budowa wewnętrznych struktur danych
-1. lista zwracana przez WSStoreAPI.get_office_list()
+1. lista zwracana przez WSStoreAPI.get_offices()
 ```json
 [
     {
@@ -76,8 +76,24 @@ error = '"', nonempty_string, '"'
 ]
 ```
 
-2. lista zwracana przez WSStoreAPI.get_matter_list()
+2. lista zwracana przez WSStoreAPI.get_matters_with_samples()
 ```json
+[
+    {
+        'name': nazwaGrupy,                  //str
+        'ordinal': lp,                       //int / None
+        'group_id': idGrupy,                 //int
+        'queue_length': liczbaKlwKolejce,    //int
+        'open_counters': liczbaCzynnychStan, //int
+        'current_number': aktualnyNumer,     //str
+        'time': date time                    //str
+    },
+    ...
+]
+```
+
+3. lista zwracana przez CachedAPI.get_matters()
+```
 [
     {
         'name': nazwaGrupy,                  //str
@@ -88,7 +104,7 @@ error = '"', nonempty_string, '"'
 ]
 ```
 
-3. lista zwracana przez WSStoreAPI.get_sample_list()
+4. lista zwracana przez CachedAPI.get_samples()
 ```
 [
     {

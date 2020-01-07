@@ -68,14 +68,15 @@ class WSStoreAPI:
             self._urls = base_api_urls.copy()
         else:
             self._urls = None
+        self._office_key = None
 
-    def get_office_list(self) -> list:
+    def get_offices(self) -> list:
         request = urlopen(self._urls['html'], timeout=2)
         response = request.read().decode('utf-8')
         parser = OfficeListParser()
         return parser.feed(response)
 
-    def get_matter_list(self, office_key: str) -> list:
+    def _get_json_data(self, office_key: str) -> dict:
         with open('apikey') as apikey:
             parameters = {
                 'id': office_key,
@@ -84,34 +85,36 @@ class WSStoreAPI:
         request = urlopen(append_parameters(self._urls['json'], parameters), timeout=2)
         response = request.read().decode('utf-8').strip()
         data = json.loads(response)
-        if data['result'] == 'false':
-            raise APIError(data['error'])
+        if type(data['result']) == str:
+            if data.get('error') is not None:
+                raise APIError(data['error'])
+            else:
+                raise APIError(data['result'])
+        return data
+
+    def get_matters_with_samples(self, office_key=None) -> list:
+        if office_key is None:
+            office_key = self._office_key
+        data = self._get_json_data(office_key)
         return sorted([{
             'name': str(group['nazwaGrupy']),
             'ordinal': int(group['lp']) if group['lp'] is not None else None,
-            'group_id': int(group['idGrupy'])
-        }
-            for group in data['result']['grupy']
-        ], key=lambda matter: matter['name'])
-
-    def get_sample_list(self, office_key: str, matter_ordinal, matter_group_id) -> list:
-        with open('apikey') as apikey:
-            parameters = {
-                'id': office_key,
-                'apikey': apikey.read().strip()
-            }
-        request = urlopen(append_parameters(self._urls['json'], parameters), timeout=2)
-        response = request.read().decode('utf-8').strip()
-        data = json.loads(response)
-        if data['result'] == 'false':
-            raise APIError(data['error'])
-        return [{
+            'group_id': int(group['idGrupy']),
             'queue_length': int(group['liczbaKlwKolejce']),
             'open_counters': int(group['liczbaCzynnychStan']),
             'current_number': str(group['aktualnyNumer']),
             'time': str(data['result']['date'] + ' ' + data['result']['time'])
         }
             for group in data['result']['grupy']
-            if str(matter_ordinal) == str(group['lp'])
-            and int(matter_group_id) == int(group['idGrupy'])
-        ]
+        ], key=lambda matter: matter['name'])
+
+    @property
+    def office_key(self):
+        return self._office_key
+
+    @office_key.setter
+    def office_key(self, value):
+        if type(value) is str:
+            self._office_key = value
+        else:
+            raise TypeError('Office key must be a string')
