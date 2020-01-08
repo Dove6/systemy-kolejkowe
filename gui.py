@@ -1,8 +1,9 @@
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QComboBox, QTableWidget, QVBoxLayout, QWidget,
-    QAbstractItemView, QHeaderView
+    QAbstractItemView, QHeaderView, QTableWidgetItem
 )
-from PyQt5.QtCore import Qt, QTimer, QDateTime
+from PyQt5.QtCore import Qt, QTimer, QDateTime, QPointF
+from PyQt5.QtGui import QPainter
 from PyQt5.QtChart import QChart, QChartView, QLineSeries, QValueAxis, QDateTimeAxis
 
 
@@ -88,18 +89,69 @@ class LineSeries(QLineSeries):
                     points = filter(lambda point: point.y() <= max_y, points)
             self.replace(points)
 
-    def __lshift__(self, *args, **kwargs):
-        super().__lshift__(*args, **kwargs)
-        max_time = QDateTime.fromMSecsSinceEpoch(max(self.pointsVector(), key=lambda point: point.x()).x())
+    def setSamples(self, sample_list):
+        points = []
+        max_time = self.attachedAxes()[0].max()
+        for sample in sample_list:
+            time = QDateTime.fromString(sample['time'], 'yyyy-MM-dd hh:mm')
+            point = PointF(
+                time.toMSecsSinceEpoch(),
+                sample['queue_length']
+            )
+            point.setUserData({
+                'open_counters': sample['open_counters'],
+                'queue_length': sample['queue_length'],
+                'current_number': sample['current_number']
+            })
+            points.append(point)
+            if time > max_time:
+                max_time = time
+        self.replace(points)
         self.attachedAxes()[0].setRange(max_time.addSecs(-3600), max_time)
         self.attachedAxes()[0].hide()
         self.attachedAxes()[0].show()
+        # window.table.item(index, 2).setText(str(sample['open_counters']))
+        # window.table.item(index, 3).setText(str(sample['queue_length']))
+        # window.table.item(index, 4).setText(sample['current_number'])
 
-    def data(self, role=Qt.UserRole):
-        return self._data.get(role)
+    def userData(self):
+        return self._user_data
 
-    def setData(self, value, role=Qt.UserRole):
-        self._data[role] = value
+    def setUserData(self, data):
+        self._user_data = data
+
+
+class PointF(QPointF):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._user_data = None
+
+    def userData(self):
+        return self._userData
+
+    def setUserData(self, data):
+        self._userData = data
+
+
+class TableWidget(QTableWidget):
+    def setRow(self, row, matter, color=Qt.black):
+        self.setItem(row, 0, QTableWidgetItem(str(row + 1)))
+        self.setItem(row, 1, QTableWidgetItem(matter['name']))
+        self.setItem(row, 2, QTableWidgetItem())
+        self.setItem(row, 3, QTableWidgetItem())
+        self.setItem(row, 4, QTableWidgetItem())
+        self.item(row, 0).setForeground(color)
+        self.item(row, 0).setTextAlignment(int(Qt.AlignRight | Qt.AlignVCenter))
+        self.item(row, 1).setTextAlignment(int(Qt.AlignLeft | Qt.AlignVCenter))
+
+    def updateRow(self, row, sample_list):
+        latest_sample = max(
+            sample_list,
+            key=lambda sample: QDateTime.fromString(sample['time'], 'yyyy-MM-dd hh:mm')
+        )
+        self.item(row, 2).setText(str(latest_sample['open_counters']))
+        self.item(row, 3).setText(str(latest_sample['queue_length']))
+        self.item(row, 4).setText(latest_sample['current_number'])
 
 
 class MainWindow(QMainWindow):
@@ -118,8 +170,9 @@ class MainWindow(QMainWindow):
         self._chart.legend().setVisible(False)
         self._chart_view = QChartView()
         self._chart_view.setChart(self._chart)
+        self._chart_view.setRenderHint(QPainter.Antialiasing)
 
-        self._table = QTableWidget(0, 5)
+        self._table = TableWidget(0, 5)
         self._table.setHorizontalHeaderLabels([
             'Lp.',
             'Nazwa usługi',

@@ -1,8 +1,6 @@
 from database import CachedAPI
 from api import APIError
 from gui import HiDpiApplication, MainWindow
-from PyQt5.QtWidgets import QTableWidgetItem
-from PyQt5.QtCore import Qt, QPointF, QDateTime
 
 
 api = CachedAPI({
@@ -23,24 +21,10 @@ def combo_callback(item_index):
         window.chart.setSeriesCount(len(matter_list))
         window.table.setRowCount(len(matter_list))
         for index, matter in enumerate(matter_list):
-            window.chart.series()[index].setData((matter['ordinal'], matter['group_id']))
-            window.table.setItem(index, 0, QTableWidgetItem(str(index + 1)))
-            window.table.item(index, 0).setForeground(window.chart.series()[index].color())
-            window.table.item(index, 0).setTextAlignment(int(Qt.AlignRight | Qt.AlignVCenter))
-            window.table.setItem(index, 1, QTableWidgetItem(matter['name']))
-            window.table.item(index, 1).setTextAlignment(int(Qt.AlignLeft | Qt.AlignVCenter))
+            window.chart.series()[index].setUserData((matter['ordinal'], matter['group_id']))
+            window.table.setRow(index, matter, window.chart.series()[index].color())
             sample_list = api.get_sample_list(matter['ordinal'], matter['group_id'])
-            for sample in sample_list:
-                window.chart.series()[index] << QPointF(
-                    QDateTime.fromString(sample['time'], 'yyyy-MM-dd hh:mm').toMSecsSinceEpoch(),
-                    sample['queue_length']
-                )
-                window.table.setItem(index, 2, QTableWidgetItem(str(sample['open_counters'])))
-                window.table.item(index, 2).setTextAlignment(Qt.AlignCenter)
-                window.table.setItem(index, 3, QTableWidgetItem(str(sample['queue_length'])))
-                window.table.item(index, 3).setTextAlignment(Qt.AlignCenter)
-                window.table.setItem(index, 4, QTableWidgetItem(sample['current_number']))
-                window.table.item(index, 4).setTextAlignment(Qt.AlignCenter)
+            window.table.updateRow(index, sample_list)
         window.timer.start()
     except APIError as e:
         print('[BŁĄD]')
@@ -51,18 +35,11 @@ def combo_callback(item_index):
 def timer_callback():
     try:
         api.update()
-        matter_key_list = map(lambda series: series.data(), window.chart.series())
+        matter_key_list = map(lambda series: series.userData(), window.chart.series())
         for index, matter_key in enumerate(matter_key_list):
             sample_list = api.get_sample_list(matter_key[0], matter_key[1])
-            for sample in sample_list:
-                window.chart.series()[index].movePoints(-1)
-                window.chart.series()[index] << QPointF(
-                    QDateTime.fromString(sample['time'], 'yyyy-MM-dd hh:mm').toMSecsSinceEpoch(),
-                    sample['queue_length']
-                )
-                window.table.item(index, 2).setText(str(sample['open_counters']))
-                window.table.item(index, 3).setText(str(sample['queue_length']))
-                window.table.item(index, 4).setText(sample['current_number'])
+            window.chart.series()[index].setSamples(sample_list)
+            window.table.updateRow(index, sample_list)
     except APIError as e:
         print('[BŁĄD]')
         print(e)
