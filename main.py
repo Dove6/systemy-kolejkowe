@@ -1,6 +1,6 @@
 from database import CachedAPI
 from api import APIError
-from gui import HiDpiApplication, MainWindow
+from gui import HiDpiApplication, MainWindow, Popup
 
 
 api = CachedAPI({
@@ -52,10 +52,19 @@ def timer_callback():
         exit()
 
 
+def popup_callback(point, state):
+    print(point, state)
+    if state:
+        window.popup.setLabelsData(point.userData())
+        window.popup.move(point)
+        window.popup.show()
+
+
 office_list = sorted(api.get_office_list(), key=lambda x: x['name'])
 window.combo_box.setItems([x['name'] for x in office_list], [x['key'] for x in office_list])
 window.combo_box.currentIndexChanged.connect(combo_callback)
 window.timer.timeout.connect(timer_callback)
+window.chart.connect(popup_callback)
 
 if __name__ == '__main__':
     window.show()
