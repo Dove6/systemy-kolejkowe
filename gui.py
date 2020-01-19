@@ -1,9 +1,9 @@
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QComboBox, QTableWidget, QVBoxLayout, QWidget,
-    QAbstractItemView, QHeaderView, QTableWidgetItem, QGraphicsEffect, QLabel
+    QAbstractItemView, QHeaderView, QTableWidgetItem
 )
-from PyQt5.QtCore import Qt, QTimer, QDateTime, QPoint, QPointF, QSize, QSizeF, QRect, QRectF
-from PyQt5.QtGui import QPainter, QPen, QFont
+from PyQt5.QtCore import Qt, QTimer, QDateTime, QPointF
+from PyQt5.QtGui import QPainter
 from PyQt5.QtChart import QChart, QChartView, QLineSeries, QValueAxis, QDateTimeAxis
 
 
@@ -74,10 +74,6 @@ class LineChart(QChart):
             series[-1].setColor(series[index].color())
         else:
             raise ValueError('Series index out of range')
-
-    def connect(self, callback):
-        for series in self.series():
-            series.hovered.connect(callback)
 
 
 class LineSeries(QLineSeries):
@@ -190,57 +186,6 @@ class TableWidget(QTableWidget):
         self.window()._chart.setTopSeriesIndex(index)
 
 
-class RoundedCorners(QGraphicsEffect):
-    def draw(self, painter):
-        pixmap, offset = self.sourcePixmap()
-        painter.save()
-        painter.setRenderHint(QPainter.Antialiasing)
-        painter.setPen(Qt.black)
-        painter.setBrush(Qt.lightGray)
-        main_rect = self.sourceBoundingRect()
-        arrow_corner = QRectF(main_rect)
-        arrow_corner.setSize(QSizeF(25, 25))
-        painter.drawRect(arrow_corner)
-        painter.drawRoundedRect(main_rect, 25, 25)
-        painter.drawPixmap(offset, pixmap)
-        painter.restore()
-
-
-class Popup(QWidget):
-    def __init__(self, *args, **kwargs):
-        kwargs['flags'] = Qt.FramelessWindowHint
-        super().__init__(*args, **kwargs)
-        self.setAttribute(Qt.WA_TranslucentBackground)
-        self.resize(200, 100)
-        self.setGraphicsEffect(RoundedCorners())
-        self._layout = QVBoxLayout()
-        self.setLayout(self._layout)
-        self._labels = []
-        bold_font = QFont()
-        bold_font.setWeight(QFont.Bold)
-        label_names = [
-            'Nazwa sprawy:',
-            'Liczba stanowisk:',
-            'Długość kolejki:',
-            'Numer:'
-        ]
-        for i in range(4):
-            bold_label = QLabel(label_names[i])
-            bold_label.setFont(bold_font)
-            self._labels.append(bold_label)
-            label = QLabel()
-            self._labels.append(label)
-        for label in self._labels:
-            self._layout.addWidget(label)
-        self._labels[1].setWordWrap(True)
-
-    def setLabelsData(self, data):
-        self._labels[1].setText(data['name'])
-        self._labels[3].setText(data['open_counters'])
-        self._labels[5].setText(data['queue_length'])
-        self._labels[7].setText(data['current_number'])
-
-
 class MainWindow(QMainWindow):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -297,8 +242,6 @@ class MainWindow(QMainWindow):
         print('Warning: too short API polling interval')
         self._timer.setInterval(5000)
 
-        self._popup = Popup()
-
     def close(self):
         self.killTimer()
         super().close()
@@ -318,7 +261,3 @@ class MainWindow(QMainWindow):
     @property
     def timer(self):
         return self._timer
-
-    @property
-    def popup(self):
-        return self._popup
