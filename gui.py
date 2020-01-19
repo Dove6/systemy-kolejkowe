@@ -49,20 +49,37 @@ class LineChart(QChart):
         y_axis = QValueAxis()
         y_axis.setRange(0, 20)
         self.addAxis(y_axis, Qt.AlignLeft)
+        self._top_series = None
 
+    # last series = top series
     def setSeriesCount(self, count):
         self.removeAllSeries()
-        for i in range(count):
+        for i in range(count + 1):
             series = LineSeries()
             self.addSeries(series)
             for axis in self.axes():
                 series.attachAxis(axis)
 
+    def topSeriesIndex(self):
+        return self._top_series
+
+    def setTopSeriesIndex(self, index):
+        series = self.series()
+        if index is None:
+            self._top_series = index
+            series[-1].replace([])
+        elif index < len(self.series()) and index >= 0:
+            self._top_series = index
+            series[-1].replace(series[index].pointsVector())
+            series[-1].setColor(series[index].color())
+        else:
+            raise ValueError('Series index out of range')
+
 
 class LineSeries(QLineSeries):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self._data = {}
+        self._user_data = None
 
     def movePoints(self, x=0, y=0, truncate=False):
         if x != 0 or y != 0:
@@ -91,14 +108,19 @@ class LineSeries(QLineSeries):
 
     def setSamples(self, sample_list):
         points = []
-        max_time = self.attachedAxes()[0].max()
+        max_time = QDateTime.fromMSecsSinceEpoch(0)
         for sample in sample_list:
             time = QDateTime.fromString(sample['time'], 'yyyy-MM-dd hh:mm')
             point = PointF(
                 time.toMSecsSinceEpoch(),
                 sample['queue_length']
             )
+            if type(self._user_data) is dict:
+                name = self._user_data.get('name')
+            else:
+                name = None
             point.setUserData({
+                'name': name,
                 'open_counters': sample['open_counters'],
                 'queue_length': sample['queue_length'],
                 'current_number': sample['current_number']
@@ -107,12 +129,13 @@ class LineSeries(QLineSeries):
             if time > max_time:
                 max_time = time
         self.replace(points)
+        chart = self.chart()
+        if chart is not None:
+            if chart.topSeriesIndex() == chart.series().index(self):
+                chart.series()[-1].replace(points)
         self.attachedAxes()[0].setRange(max_time.addSecs(-3600), max_time)
         self.attachedAxes()[0].hide()
         self.attachedAxes()[0].show()
-        # window.table.item(index, 2).setText(str(sample['open_counters']))
-        # window.table.item(index, 3).setText(str(sample['queue_length']))
-        # window.table.item(index, 4).setText(sample['current_number'])
 
     def userData(self):
         return self._user_data
@@ -127,10 +150,10 @@ class PointF(QPointF):
         self._user_data = None
 
     def userData(self):
-        return self._userData
+        return self._user_data
 
     def setUserData(self, data):
-        self._userData = data
+        self._user_data = data
 
 
 class TableWidget(QTableWidget):
@@ -152,6 +175,15 @@ class TableWidget(QTableWidget):
         self.item(row, 2).setText(str(latest_sample['open_counters']))
         self.item(row, 3).setText(str(latest_sample['queue_length']))
         self.item(row, 4).setText(latest_sample['current_number'])
+
+    def selectionChanged(self, selected, deselected):
+        super().selectionChanged(selected, deselected)
+        selected_indexes = selected.indexes()
+        if len(selected_indexes) > 0:
+            index = selected_indexes[0].row()
+        else:
+            index = None
+        self.window()._chart.setTopSeriesIndex(index)
 
 
 class MainWindow(QMainWindow):
@@ -182,7 +214,8 @@ class MainWindow(QMainWindow):
         ])
         self._table.verticalHeader().hide()
         self._table.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self._table.setSelectionMode(QAbstractItemView.NoSelection)
+        self._table.setSelectionMode(QAbstractItemView.SingleSelection)
+        self._table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self._table.setShowGrid(False)
         self._table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
         self._table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)

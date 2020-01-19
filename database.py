@@ -153,8 +153,8 @@ class CachedAPI(WSStoreAPI):
     def get_matter_list(self, office_key=None) -> list:
         if office_key is None:
             office_key = self._office_key
+        office_id = self._get_office_id(office_key)
         with SQLite3Cursor(self._filename) as cursor:
-            office_id = self._get_office_id(office_key)
             result = cursor.execute('''
                 SELECT name, ordinal, group_id
                 FROM matters
@@ -170,8 +170,8 @@ class CachedAPI(WSStoreAPI):
         return result_list
 
     def get_sample_list(self, matter_ordinal, matter_group_id, office_key=None) -> list:
+        matter_id = self._get_matter_id(matter_ordinal, matter_group_id, office_key)
         with SQLite3Cursor(self._filename) as cursor:
-            matter_id = self._get_matter_id(matter_ordinal, matter_group_id, office_key)
             result = cursor.execute('''
                 SELECT queue_length, open_counters, current_number, time
                 FROM samples
@@ -194,9 +194,23 @@ class CachedAPI(WSStoreAPI):
                 VALUES (?, ?)
             ''', [(office['name'], office['key']) for office in office_list])
 
-    def _store_matter_list(self, office_key: str, matter_list: list):
+    def _store_matter(self, office_id, matter: dict):
         with SQLite3Cursor(self._filename) as cursor:
-            office_id = self._get_office_id(office_key)
+            cursor.execute('''
+                INSERT INTO matters (name, ordinal, group_id, office_id)
+                VALUES (?, ?, ?, ?)
+                ''', (
+                matter['name'],
+                matter['ordinal'],
+                matter['group_id'],
+                office_id
+                )
+            )
+            return cursor.lastrowid
+
+    def _store_matter_list(self, office_key: str, matter_list: list):
+        office_id = self._get_office_id(office_key)
+        with SQLite3Cursor(self._filename) as cursor:
             cursor.executemany('''
                 INSERT INTO matters (name, ordinal, group_id, office_id)
                 VALUES (?, ?, ?, ?)
@@ -223,8 +237,8 @@ class CachedAPI(WSStoreAPI):
             ))
 
     def _store_sample_list(self, office_key: str, matter_ordinal, matter_group_id, sample_list: list):
+        matter_id = self._get_matter_id(office_key, matter_ordinal, matter_group_id)
         with SQLite3Cursor(self._filename) as cursor:
-            matter_id = self._get_matter_id(office_key, matter_ordinal, matter_group_id)
             cursor.executemany('''
                 INSERT INTO samples (time, open_counters, queue_length,
                 current_number, matter_id)
@@ -244,18 +258,7 @@ class CachedAPI(WSStoreAPI):
         for matter in matters_with_samples:
             matter_id = self._get_matter_id(matter['ordinal'], matter['group_id'])
             if matter_id is None:
-                with SQLite3Cursor(self._filename) as cursor:
-                    cursor.execute('''
-                        INSERT INTO matters (name, ordinal, group_id, office_id)
-                        VALUES (?, ?, ?, ?)
-                        ''', (
-                        matter['name'],
-                        matter['ordinal'],
-                        matter['group_id'],
-                        office_id
-                        )
-                    )
-                    matter_id = cursor.lastrowid
+                matter_id = self._store_matter(office_id, matter)
             if not self._check_if_sample_exists(matter['time'], matter_id):
                 self._store_sample(matter_id, matter)
 
@@ -269,26 +272,3 @@ class CachedAPI(WSStoreAPI):
             self._office_key = value
         else:
             raise TypeError('Office key must be a string')
-
-    # @property
-    # def matter_key(self):
-    #     if self._matter_key is None:
-    #         return None
-    #     else:
-    #         if len(self._matter_key) != 0:
-    #             return (self._matter_key['ordinal'], self._matter_key['group_id'])
-    #         else:
-    #             return None
-
-    # @office_key.setter
-    # def matter_key(self, value):
-    #     if type(value) is dict:
-    #
-    #     elif type(value) is tuple:
-    #
-    #     else:
-    #         raise TypeError('Matter key must be a tuple or a dictionary')
-
-    # AND (STRFTIME('%s',
-    # STRFTIME('%Y-%m-%d %H:%M', 'now', 'localtime'))
-    # - STRFTIME('%s', time)) > 60

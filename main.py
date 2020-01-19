@@ -21,9 +21,14 @@ def combo_callback(item_index):
         window.chart.setSeriesCount(len(matter_list))
         window.table.setRowCount(len(matter_list))
         for index, matter in enumerate(matter_list):
-            window.chart.series()[index].setUserData((matter['ordinal'], matter['group_id']))
+            window.chart.series()[index].setUserData({
+                'name': matter['name'],
+                'ordinal': matter['ordinal'],
+                'group_id': matter['group_id']
+            })
             window.table.setRow(index, matter, window.chart.series()[index].color())
             sample_list = api.get_sample_list(matter['ordinal'], matter['group_id'])
+            window.chart.series()[index].setSamples(sample_list)
             window.table.updateRow(index, sample_list)
         window.timer.start()
     except APIError as e:
@@ -37,9 +42,10 @@ def timer_callback():
         api.update()
         matter_key_list = map(lambda series: series.userData(), window.chart.series())
         for index, matter_key in enumerate(matter_key_list):
-            sample_list = api.get_sample_list(matter_key[0], matter_key[1])
-            window.chart.series()[index].setSamples(sample_list)
-            window.table.updateRow(index, sample_list)
+            if matter_key is not None:
+                sample_list = api.get_sample_list(matter_key['ordinal'], matter_key['group_id'])
+                window.chart.series()[index].setSamples(sample_list)
+                window.table.updateRow(index, sample_list)
     except APIError as e:
         print('[BŁĄD]')
         print(e)
@@ -51,5 +57,6 @@ window.combo_box.setItems([x['name'] for x in office_list], [x['key'] for x in o
 window.combo_box.currentIndexChanged.connect(combo_callback)
 window.timer.timeout.connect(timer_callback)
 
-window.show()
-application.exec_()
+if __name__ == '__main__':
+    window.show()
+    application.exec_()
