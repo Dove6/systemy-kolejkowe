@@ -1,6 +1,7 @@
 from database import CachedAPI
 from api import APIError
 from gui import HiDpiApplication, MainWindow
+from threading import Thread
 
 
 api = CachedAPI({
@@ -13,10 +14,15 @@ window = MainWindow()
 
 
 def combo_callback(item_index):
+    if window.combo_box.itemData(0) == 'placeholder':
+        window.combo_box.currentIndexChanged.disconnect(combo_callback)
+        window.combo_box.removeItem(0)
+        item_index -= 1
+        window.combo_box.currentIndexChanged.connect(combo_callback)
     window.timer.stop()
     api.office_key = window.combo_box.itemData(item_index)
     try:
-        api.update()
+        Thread(target=api.update()).start()
         matter_list = api.get_matter_list()
         window.chart.setSeriesCount(len(matter_list))
         window.table.setRowCount(len(matter_list))
@@ -39,7 +45,7 @@ def combo_callback(item_index):
 
 def timer_callback():
     try:
-        api.update()
+        Thread(target=api.update()).start()
         matter_key_list = map(lambda series: series.userData(), window.chart.series())
         for index, matter_key in enumerate(matter_key_list):
             if matter_key is not None:
@@ -54,6 +60,8 @@ def timer_callback():
 
 office_list = sorted(api.get_office_list(), key=lambda x: x['name'])
 window.combo_box.setItems([x['name'] for x in office_list], [x['key'] for x in office_list])
+window.combo_box.insertItem(0, 'Wybierz urząd...', 'placeholder')
+window.combo_box.setCurrentIndex(0)
 window.combo_box.currentIndexChanged.connect(combo_callback)
 window.timer.timeout.connect(timer_callback)
 

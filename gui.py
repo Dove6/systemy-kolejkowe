@@ -3,8 +3,9 @@ from PyQt5.QtWidgets import (
     QAbstractItemView, QHeaderView, QTableWidgetItem
 )
 from PyQt5.QtCore import Qt, QTimer, QDateTime, QPointF
-from PyQt5.QtGui import QPainter
+from PyQt5.QtGui import QPainter, QColor, QFont
 from PyQt5.QtChart import QChart, QChartView, QLineSeries, QValueAxis, QDateTimeAxis
+from random import shuffle, randint
 
 
 class HiDpiApplication(QApplication):
@@ -54,8 +55,18 @@ class LineChart(QChart):
     # last series = top series
     def setSeriesCount(self, count):
         self.removeAllSeries()
+        colors = [QColor.fromHsl(
+            360 * i // (count + 1),
+            128,
+            randint(96, 192)
+        ) for i in range(count + 1)]
+        shuffle(colors)
         for i in range(count + 1):
             series = LineSeries()
+            series.setColor(colors[i])
+            pen = series.pen()
+            pen.setWidth(4)
+            series.setPen(pen)
             self.addSeries(series)
             for axis in self.axes():
                 series.attachAxis(axis)
@@ -71,7 +82,9 @@ class LineChart(QChart):
         elif index < len(self.series()) and index >= 0:
             self._top_series = index
             series[-1].replace(series[index].pointsVector())
-            series[-1].setColor(series[index].color())
+            pen = series[index].pen()
+            pen.setWidth(8)
+            series[-1].setPen(pen)
         else:
             raise ValueError('Series index out of range')
 
@@ -163,7 +176,11 @@ class TableWidget(QTableWidget):
         self.setItem(row, 2, QTableWidgetItem())
         self.setItem(row, 3, QTableWidgetItem())
         self.setItem(row, 4, QTableWidgetItem())
-        self.item(row, 0).setForeground(color)
+        self.item(row, 0).setBackground(color)
+        self.item(row, 0).setForeground(Qt.white)
+        font = self.item(row, 0).font()
+        font.setWeight(QFont.Bold)
+        self.item(row, 0).setFont(font)
         self.item(row, 0).setTextAlignment(int(Qt.AlignRight | Qt.AlignVCenter))
         self.item(row, 1).setTextAlignment(int(Qt.AlignLeft | Qt.AlignVCenter))
 
@@ -212,6 +229,7 @@ class MainWindow(QMainWindow):
             'Długość kolejki',
             'Aktualny numer'
         ])
+        self._table.horizontalHeader().setHighlightSections(False)
         self._table.verticalHeader().hide()
         self._table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self._table.setSelectionMode(QAbstractItemView.SingleSelection)
