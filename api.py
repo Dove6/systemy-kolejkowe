@@ -5,48 +5,126 @@ import json
 
 
 class OfficeListParser(HTMLParser):
+    '''
+    HTMLParser subclass that retrieves list of offices in a form of list of
+    dictionaries
 
-    def __init__(self):
-        super().__init__()
-        self._found_id = False
-        self._awaiting_name = False
-        self._offices = []
-
-    def handle_starttag(self, tag, attrs):
-        sought = {
+    :ivar _flags: Flags used throughout the parsing/search process
+    :vartype _flags: dict
+    :ivar _sought_attrs: HTML tag attributes values indicating approaching
+        occurence of office ID key
+    :vartype _sought_attrs: dict
+    :ivar _sought_tag: HTML tag name which attributes are to check
+    :vartype _sought_tag: str
+    :ivar _office_list: Result of parsing stored internally
+    :vartype _office_list: list
+    '''
+    def __init__(self, *, **kwargs):
+        super().__init__(**kwargs)
+        self._flags = {
+            'id_found': False,
+            'awaiting_name': False
+        }
+        self._sought_attrs = {
             'class': 'show_example',
             'role': 'wsstore_api_info#https://api.um.warszawa.pl/api/action'
         }
-        if tag == 'div':
+        self._sought_tag = 'div'
+        self._office_list = []
+
+    def handle_starttag(self, tag, attrs):
+        '''
+        Overloaded internal function for handling HTML starting tag occurence
+
+        :param tag: HTML starting tag name
+        :type tag: str
+        :param attrs: HTML starting tag attributes (key, value) pairs list
+        :type attrs: list
+        '''
+        if tag == self._sought_tag:
             attrs = dict(attrs)
-            if set(['role', 'class', 'id']).issubset(set(attrs.keys())):
-                if attrs['class'] == sought['class'] and attrs['role'] == sought['role']:
-                    self._offices.append({'name': None, 'key': attrs['id']})
-                    self._found_id = True
+            # Preparing subdictionary for comparing with self._sought_attrs
+            checked_attrs = {
+                key: attrs.get(key)
+                for key in self._sought_attrs.keys()
+                if attrs.get(key) is not None
+            }
+            # If attributes values match, increment parsing progress indicator
+            # by modifying result and setting relevant flag
+            if self._sought_attrs == checked_attrs:
+                self._offices.append({'name': None, 'key': attrs['id']})
+                self._flags['id_found'] = True
 
     def handle_data(self, data):
+        '''
+        Overloaded internal function for handling HTML arbitrary data occurence
+
+        :param data: Arbitrary data (text node or script)
+        :type data: str
+        '''
         data = data.strip()
         if data != '':
-            if self._awaiting_name:
+            # If office name text node is expected, finish office entry
+            # processing and reset flags
+            if self._flags['awaiting_name']:
                 self._offices[len(self._offices) - 1]['name'] = data
-                self._found_id = False
-                self._awaiting_name = False
-            elif self._found_id:
+                self._flags['id_found'] = False
+                self._flags['awaiting_name'] = False
+            # If office entry processing has been just started, seek for
+            # office name occurence indicator. If found, set appropriate flag
+            elif self._flags['id_found']:
                 if data == 'Opis danych':
                     self._awaiting_name = True
 
     def handle_endtag(self, tag):
-        pass  # do nothing
+        '''
+        Overloaded internal function for handling HTML ending tag occurence
+
+        Since nothing is needed to do here, the method does nothing.
+
+        :param tag: HTML ending tag name
+        :type tag: str
+        '''
+        pass
 
     def handle_startendtag(self, tag, attrs):
-        pass  # do nothing
+        '''
+        Overloaded internal function for handling XHTML-style empty tag
+        occurence
 
-    def feed(self, data):
-        super().feed(data)
-        return self._offices
+        Since nothing is needed to do here, the method does nothing.
+
+        :param tag: HTML tag name
+        :type tag: str
+        :param attrs: HTML tag attributes (key, value) pairs list
+        :type attrs: list
+        '''
+        pass
+
+    def reset(self):
+        '''
+        Overloaded public function for resetting parsing process
+        '''
+        super().reset()
+        self._office_list = []
+
+    def get_result(self):
+        '''
+        Getter function for getting result of parsing
+
+        It explicitly closes the parsing process before fetching result
+
+        :returns: Result office list
+        :rtype: list
+        '''
+        self.close()
+        return self._office_list[:]
 
 
 class APIError(Exception):
+    '''
+    Exception indicating errors during fetching API data
+    '''
     pass
 
 
@@ -74,7 +152,8 @@ class WSStoreAPI:
         request = urlopen(self._urls['html'], timeout=2)
         response = request.read().decode('utf-8')
         parser = OfficeListParser()
-        return parser.feed(response)
+        parser.feed(response)
+        return parser.get_result()
 
     def _get_json_data(self, office_key: str) -> dict:
         with open('apikey') as apikey:
