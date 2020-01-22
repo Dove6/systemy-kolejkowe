@@ -2,7 +2,7 @@ from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QComboBox, QTableWidget, QVBoxLayout, QWidget,
     QAbstractItemView, QHeaderView, QTableWidgetItem
 )
-from PyQt5.QtCore import Qt, QTimer, QDateTime, QPointF
+from PyQt5.QtCore import Qt, QTimer, QDateTime, QPointF, QThread, pyqtSignal
 from PyQt5.QtGui import QPainter, QColor, QFont
 from PyQt5.QtChart import QChart, QChartView, QLineSeries, QValueAxis, QDateTimeAxis
 from random import shuffle, randint
@@ -55,21 +55,23 @@ class LineChart(QChart):
     # last series = top series
     def setSeriesCount(self, count):
         self.removeAllSeries()
-        colors = [QColor.fromHsl(
-            360 * i // (count + 1),
-            128,
-            randint(96, 192)
-        ) for i in range(count + 1)]
-        shuffle(colors)
         for i in range(count + 1):
             series = LineSeries()
-            series.setColor(colors[i])
             pen = series.pen()
             pen.setWidth(4)
             series.setPen(pen)
             self.addSeries(series)
             for axis in self.axes():
                 series.attachAxis(axis)
+
+    def setSeriesSamples(self, series_index, sample_list):
+        if 0 <= series_index < len(self.series()):
+            self.series()[series_index].setSamples(sample_list)
+
+    def setSeriesUserData(self, series_index, matter, color):
+        if 0 <= series_index < len(self.series()):
+            self.series()[series_index].setUserData(matter)
+            self.series()[series_index].setColor(color)
 
     def topSeriesIndex(self):
         return self._top_series
@@ -204,9 +206,62 @@ class TableWidget(QTableWidget):
         self.window()._chart.setTopSeriesIndex(index)
 
 
+class CachingThread(QThread):
+    succeeded = pyqtSignal()
+
+    def __init__(self, api):
+        super().__init__()
+        self._api = api
+
+    def run(self):
+        self._api.update()
+        self.succeeded.emit()
+
+
+class DisplayingThread(QThread):
+    got_sample_list = pyqtSignal(int, list)
+
+    def __init__(self, api, chart):
+        super().__init__()
+        self._api = api
+        self._chart = chart
+
+    def run(self):
+        matter_key_list = map(
+            lambda series: series.userData(), self._chart.series())
+        for index, matter_key in enumerate(matter_key_list):
+            if matter_key is not None:
+                sample_list = self._api.get_sample_list(
+                    matter_key['ordinal'], matter_key['group_id'])
+                self.got_sample_list.emit(index, sample_list)
+
+
+class SettingThread(QThread):
+    got_matter_list = pyqtSignal(int, dict, QColor)
+    got_matter_count = pyqtSignal(int)
+
+    def __init__(self, api, chart):
+        super().__init__()
+        self._api = api
+        self._chart = chart
+
+    def run(self):
+        matter_list = self._api.get_matter_list()
+        self.got_matter_count.emit(len(matter_list))
+        colors = [QColor.fromHsl(
+            360 * i // (len(matter_list) + 1),
+            128,
+            randint(96, 192)
+        ) for i in range(len(matter_list) + 1)]
+        shuffle(colors)
+        for index, matter in enumerate(matter_list):
+            self.got_matter_list.emit(index, matter, colors[index])
+
+
 class MainWindow(QMainWindow):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, api, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self._api = api
 
         self.resize(750, 550)
 
@@ -260,6 +315,56 @@ class MainWindow(QMainWindow):
         self._timer = QTimer()
         print('Warning: too short API polling interval')
         self._timer.setInterval(5000)
+
+        self._threads = {
+            'caching': CachingThread(api),
+            'displaying': DisplayingThread(api, self._chart),
+            'setting': SettingThread(api, self._chart)
+        }
+        self._threads['caching'].succeeded.connect(
+            self._threads['displaying'].start)
+        self._threads['displaying'].got_sample_list.connect(
+            self._table.updateRow)
+        self._threads['displaying'].got_sample_list.connect(
+            self._chart.setSeriesSamples)
+        self._threads['setting'].got_matter_count.connect(
+            self._table.setRowCount)
+        self._threads['setting'].got_matter_count.connect(
+            self._chart.setSeriesCount)
+        self._threads['setting'].got_matter_list.connect(
+            self._table.setRow)
+        self._threads['setting'].got_matter_list.connect(
+            self._chart.setSeriesUserData)
+        self._threads['setting'].finished.connect(self._after_setting)
+
+        self._timer.timeout.connect(self._threads['caching'].start)
+
+        office_list = sorted(api.get_office_list(), key=lambda x: x['name'])
+        self._combo.setItems(
+            [x['name'] for x in office_list], [x['key'] for x in office_list])
+        self._combo.insertItem(0, 'Wybierz urząd...', 'placeholder')
+        self._combo.setCurrentIndex(0)
+        self._combo.currentIndexChanged.connect(self._combo_callback)
+
+    def _combo_callback(self, item_index):
+        if self._combo.itemData(0) == 'placeholder':
+            self._combo.currentIndexChanged.disconnect()
+            self._combo.removeItem(0)
+            item_index -= 1
+            self._combo.currentIndexChanged.connect(self._combo_callback)
+        self._timer.stop()
+        self._threads['caching'].succeeded.disconnect()
+        self._threads['caching'].finished.connect(
+            self._threads['setting'].start)
+        self._api.office_key = self._combo.itemData(item_index)
+        self._threads['caching'].start()
+
+    def _after_setting(self):
+        self._threads['caching'].finished.disconnect()
+        self._threads['caching'].succeeded.connect(
+            self._threads['displaying'].start)
+        self._timer.start()
+        self._threads['caching'].start()
 
     def close(self):
         self.killTimer()
