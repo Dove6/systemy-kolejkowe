@@ -4,10 +4,12 @@ from gui import HiDpiApplication, MainWindow
 from threading import Thread
 
 
-api = CachedAPI({
+api_urls = {
     'html': 'https://api.um.warszawa.pl/daneszcz.php?data=16c404ef084cfaffca59ef14b07dc516',
     'json': 'https://api.um.warszawa.pl/api/action/wsstore_get/'
-}, 'cache.db')
+}
+
+api = CachedAPI(api_urls['html'], api_urls['json'], 'cache.db')
 
 application = HiDpiApplication([])
 window = MainWindow()
@@ -22,7 +24,7 @@ def combo_callback(item_index):
     window.timer.stop()
     api.office_key = window.combo_box.itemData(item_index)
     try:
-        Thread(target=api.update()).start()
+        Thread(target=api.update).start()
         matter_list = api.get_matter_list()
         window.chart.setSeriesCount(len(matter_list))
         window.table.setRowCount(len(matter_list))
@@ -45,7 +47,7 @@ def combo_callback(item_index):
 
 def timer_callback():
     try:
-        Thread(target=api.update()).start()
+        Thread(target=api.update).start()
         matter_key_list = map(lambda series: series.userData(), window.chart.series())
         for index, matter_key in enumerate(matter_key_list):
             if matter_key is not None:

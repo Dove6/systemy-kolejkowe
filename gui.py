@@ -185,13 +185,14 @@ class TableWidget(QTableWidget):
         self.item(row, 1).setTextAlignment(int(Qt.AlignLeft | Qt.AlignVCenter))
 
     def updateRow(self, row, sample_list):
-        latest_sample = max(
-            sample_list,
-            key=lambda sample: QDateTime.fromString(sample['time'], 'yyyy-MM-dd hh:mm')
-        )
-        self.item(row, 2).setText(str(latest_sample['open_counters']))
-        self.item(row, 3).setText(str(latest_sample['queue_length']))
-        self.item(row, 4).setText(latest_sample['current_number'])
+        if len(sample_list) > 0:
+            latest_sample = max(
+                sample_list,
+                key=lambda sample: QDateTime.fromString(sample['time'], 'yyyy-MM-dd hh:mm')
+            )
+            self.item(row, 2).setText(str(latest_sample['open_counters']))
+            self.item(row, 3).setText(str(latest_sample['queue_length']))
+            self.item(row, 4).setText(latest_sample['current_number'])
 
     def selectionChanged(self, selected, deselected):
         super().selectionChanged(selected, deselected)

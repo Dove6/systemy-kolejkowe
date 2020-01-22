@@ -22,9 +22,14 @@ class SQLite3Cursor:
 
 
 class CachedAPI(WSStoreAPI):
-    def __init__(self, base_api_urls=None, cache_filename=':memory:'):
-        super().__init__(base_api_urls)
-        self._filename = cache_filename
+    def __init__(
+            self, html_api_url: str, json_api_url: str,
+            cache_filename=None) -> None:
+        super().__init__(html_api_url, json_api_url)
+        if cache_filename is None:
+            self._filename = ':memory:'
+        else:
+            self._filename = cache_filename
         self._init_tables()
 
     def _init_tables(self):
