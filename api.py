@@ -2,6 +2,7 @@ from html.parser import HTMLParser
 from urllib.request import urlopen
 from urllib.parse import urlencode
 from urllib.error import URLError
+import socket
 import json
 
 from retrying import retry
@@ -11,7 +12,7 @@ from typing import Union, Optional, Dict, List, Tuple, Any
 class OfficeListParser(HTMLParser):
     '''
     HTMLParser subclass that retrieves list of offices in a form of list of
-    dictionaries
+    dictionaries.
 
     :ivar _flags: Flags used throughout the parsing/search process
     :ivar _office_list: Result of parsing stored internally
@@ -30,7 +31,7 @@ class OfficeListParser(HTMLParser):
     def handle_starttag(
             self, tag: str, attrs: List[Tuple[str, str]]) -> None:
         '''
-        Handle HTML starting tag occurence
+        Handle HTML starting tag occurence.
         (overriden callback function)
 
         :param tag: HTML starting tag name
@@ -53,12 +54,12 @@ class OfficeListParser(HTMLParser):
             # If attributes values match, increment parsing progress indicator
             # by modifying result and setting relevant flag
             if sought_attrs == checked_attrs:
-                self._offices.append({'name': None, 'key': attrs['id']})
+                self._office_list.append({'name': None, 'key': attrs['id']})
                 self._flags['id_found'] = True
 
     def handle_data(self, data: str) -> None:
         '''
-        Handle HTML arbitrary data occurence
+        Handle HTML arbitrary data occurence.
         (overriden callback function)
 
         :param data: Arbitrary data (text node or script)
@@ -68,7 +69,7 @@ class OfficeListParser(HTMLParser):
             if self._flags['awaiting_name']:
                 # If office name text node is expected, finish office entry
                 # processing and reset flags
-                self._offices[len(self._offices) - 1]['name'] = data
+                self._office_list[len(self._office_list) - 1]['name'] = data
                 self._flags['id_found'] = False
                 self._flags['awaiting_name'] = False
             elif self._flags['id_found']:
@@ -76,11 +77,11 @@ class OfficeListParser(HTMLParser):
                 # office name occurence indicator. If found, set appropriate
                 # flag
                 if data == 'Opis danych':
-                    self._awaiting_name = True
+                    self._flags['awaiting_name'] = True
 
     def handle_endtag(self, tag: str) -> None:
         '''
-        Handle HTML ending tag occurence
+        Handle HTML ending tag occurence.
         (overriden callback function)
 
         Since nothing is needed to do here, the method does nothing.
@@ -92,7 +93,7 @@ class OfficeListParser(HTMLParser):
     def handle_startendtag(
             self, tag: str, attrs: List[Tuple[str, str]]) -> None:
         '''
-        Handle XHTML-style empty tag occurence
+        Handle XHTML-style empty tag occurence.
         (overriden callback function)
 
         Since nothing needs to be done here, the method does nothing.
@@ -104,7 +105,7 @@ class OfficeListParser(HTMLParser):
 
     def reset(self) -> None:
         '''
-        Reset parsing process
+        Reset parsing process.
         (overriden function)
         '''
         super().reset()
@@ -112,7 +113,7 @@ class OfficeListParser(HTMLParser):
 
     def get_result(self) -> List[Dict[str, str]]:
         '''
-        Get the result of parsing
+        Get the result of parsing.
 
         It explicitly closes the parsing process before fetching result
 
@@ -124,14 +125,14 @@ class OfficeListParser(HTMLParser):
 
 class APIError(Exception):
     '''
-    Exception indicating errors during fetching API data
+    Exception indicating errors during fetching API data.
     '''
     pass
 
 
 def append_parameters(url: str, params: Dict[str, str]) -> str:
     '''
-    Encode and append query parameters to an URL
+    Encode and append query parameters to an URL.
 
     :param url: Subject URL (may already contain query string)
     :param params: Query parameters to be appended
@@ -187,7 +188,7 @@ def is_connection_error(exception):
 class WSStoreAPI:
     '''
     Class used for fetching queue system data using API provided by the City
-    of Warsaw
+    of Warsaw.
 
     :param html_api_url: Base URL of API returning HTML encoded data
     :param json_api_url: Base URL of API returning JSON encoded data
@@ -216,11 +217,13 @@ class WSStoreAPI:
 
         :returns: Office identifiers list
         '''
-        if not check_internet_connection():
-            raise ConnectionError('Internet connection unavailable')
         # Make a HTTP request for fetching HTML data
-        request = urlopen(self._api_urls['html'], timeout=5)
-        response = request.read().decode('utf-8')
+        try:
+            request = urlopen(self._api_urls['html'], timeout=5)
+            response = request.read().decode('utf-8')
+        except (URLError, socket.timeout, socket.gaierror):
+            raise ConnectionError('Cannot connect to the API')
+            
         # Parse fetched data
         parser = OfficeListParser()
         parser.feed(response)
@@ -233,18 +236,16 @@ class WSStoreAPI:
     def _get_json_data(
             self, office_key: Optional[str] = None) -> Dict[str, Any]:
         '''
-        Retrieve unprocessed office data from JSON API as a dictionary
+        Retrieve unprocessed office data from JSON API as a dictionary.
         (internal function)
 
         Function retries 5 times on connection errors, waiting 2 seconds
         between retries.
 
         :param office_key: Requested office identifier
-            (defaults to self._office_key)
+            (defaults to self.office_key)
         :returns: Resulting dictionary
         '''
-        if not check_internet_connection():
-            raise ConnectionError('Internet connection unavailable')
         if office_key is None:
             if self._office_key is None:
                 raise AssertionError('Office key not provided')
@@ -256,9 +257,13 @@ class WSStoreAPI:
             'apikey': apikey().strip()
         }
         # Make a HTTP request for fetching JSON data
-        request = urlopen(
-            append_parameters(self._api_urls['json'], parameters), timeout=5)
-        response = request.read().decode('utf-8').strip()
+        try:
+            request = urlopen(
+                append_parameters(self._api_urls['json'], parameters),
+                timeout=5)
+            response = request.read().decode('utf-8').strip()
+        except (URLError, socket.timeout, socket.gaierror):
+            raise ConnectionError('Cannot connect to the API')
         # Parse fetched data
         data = json.loads(response)
         # Raise an error if API returned error response
@@ -273,7 +278,7 @@ class WSStoreAPI:
             self, office_key: Optional[str] = None) -> List[Dict[str, Union[str, Optional[int]]]]:
         '''
         Retrieve office-specific list of current states of queues for each
-        administrative matter available in the office using the JSON API
+        administrative matter available in the office using the JSON API.
 
         :param office_key: Requested office identifier
             (defaults to self._office_key)
@@ -299,7 +304,7 @@ class WSStoreAPI:
     def office_key(self) -> str:
         '''
         Default office identifier used when per-method optional office key
-        is not provided
+        is not provided.
 
         :raises: :class:`TypeError`: Trying to assign non-string value
         '''
