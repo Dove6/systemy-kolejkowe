@@ -7,8 +7,14 @@ from PyQt5.QtGui import QPainter, QColor, QFont
 from PyQt5.QtChart import QChart, QChartView, QLineSeries, QValueAxis, QDateTimeAxis
 from random import shuffle, randint
 
+from typing import Union, Optional, Dict, List, Tuple, Any
+from retrying import retry
+
 
 class HiDpiApplication(QApplication):
+    '''
+        QApplication's subclass supporting hi-dpi scaling by default.
+    '''
     def __init__(self, *args, **kwargs):
         # enable support for hi-dpi screens
         # https://leomoon.com/journal/python/high-dpi-scaling-in-pyqt5/
@@ -40,7 +46,7 @@ class ComboBox(QComboBox):
                     self.setItemData(index, data[index])
 
 
-class LineChart(QChart):
+class QueueSystemChart(QChart):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         x_axis = QDateTimeAxis()
@@ -56,7 +62,7 @@ class LineChart(QChart):
     def setSeriesCount(self, count):
         self.removeAllSeries()
         for i in range(count + 1):
-            series = LineSeries()
+            series = QueueSystemSeries()
             pen = series.pen()
             pen.setWidth(4)
             series.setPen(pen)
@@ -91,7 +97,7 @@ class LineChart(QChart):
             raise ValueError('Series index out of range')
 
 
-class LineSeries(QLineSeries):
+class QueueSystemSeries(QLineSeries):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._user_data = None
@@ -126,7 +132,7 @@ class LineSeries(QLineSeries):
         max_time = QDateTime.fromMSecsSinceEpoch(0)
         for sample in sample_list:
             time = QDateTime.fromString(sample['time'], 'yyyy-MM-dd hh:mm')
-            point = PointF(
+            point = DetailedPointF(
                 time.toMSecsSinceEpoch(),
                 sample['queue_length']
             )
@@ -159,7 +165,7 @@ class LineSeries(QLineSeries):
         self._user_data = data
 
 
-class PointF(QPointF):
+class DetailedPointF(QPointF):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._user_data = None
@@ -171,7 +177,7 @@ class PointF(QPointF):
         self._user_data = data
 
 
-class TableWidget(QTableWidget):
+class QueueSystemTable(QTableWidget):
     def setRow(self, row, matter, color=Qt.black):
         self.setItem(row, 0, QTableWidgetItem(str(row + 1)))
         self.setItem(row, 1, QTableWidgetItem(matter['name']))
@@ -206,7 +212,7 @@ class TableWidget(QTableWidget):
         self.window()._chart.setTopSeriesIndex(index)
 
 
-class CachingThread(QThread):
+class CacheThread(QThread):
     succeeded = pyqtSignal()
 
     def __init__(self, api):
@@ -218,7 +224,7 @@ class CachingThread(QThread):
         self.succeeded.emit()
 
 
-class DisplayingThread(QThread):
+class GUIUpdateThread(QThread):
     got_sample_list = pyqtSignal(int, list)
 
     def __init__(self, api, chart):
@@ -236,7 +242,7 @@ class DisplayingThread(QThread):
                 self.got_sample_list.emit(index, sample_list)
 
 
-class SettingThread(QThread):
+class GUISetupThread(QThread):
     got_matter_list = pyqtSignal(int, dict, QColor)
     got_matter_count = pyqtSignal(int)
 
@@ -258,7 +264,7 @@ class SettingThread(QThread):
             self.got_matter_list.emit(index, matter, colors[index])
 
 
-class MainWindow(QMainWindow):
+class QueueSystemWindow(QMainWindow):
     def __init__(self, api, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._api = api
@@ -270,14 +276,14 @@ class MainWindow(QMainWindow):
 
         self._combo = ComboBox()
 
-        self._chart = LineChart()
+        self._chart = QueueSystemChart()
         self._chart.setTitle('Tytuł')
         self._chart.legend().setVisible(False)
         self._chart_view = QChartView()
         self._chart_view.setChart(self._chart)
         self._chart_view.setRenderHint(QPainter.Antialiasing)
 
-        self._table = TableWidget(0, 5)
+        self._table = QueueSystemTable(0, 5)
         self._table.setHorizontalHeaderLabels([
             'Lp.',
             'Nazwa usługi',
@@ -313,13 +319,12 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(self._main_widget)
 
         self._timer = QTimer()
-        print('Warning: too short API polling interval')
-        self._timer.setInterval(5000)
+        self._timer.setInterval(api.cooldown)
 
         self._threads = {
-            'caching': CachingThread(api),
-            'displaying': DisplayingThread(api, self._chart),
-            'setting': SettingThread(api, self._chart)
+            'caching': CacheThread(api),
+            'displaying': GUIUpdateThread(api, self._chart),
+            'setting': GUISetupThread(api, self._chart)
         }
         self._threads['caching'].succeeded.connect(
             self._threads['displaying'].start)

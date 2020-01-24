@@ -5,8 +5,8 @@ from urllib.error import URLError
 import socket
 import json
 
-from retrying import retry
 from typing import Union, Optional, Dict, List, Tuple, Any
+from retrying import retry
 
 
 class OfficeListParser(HTMLParser):
@@ -129,6 +129,18 @@ class APIError(Exception):
     '''
     pass
 
+class APIConnectionError(APIError):
+    '''
+    Exception indicating errors during sending API request.
+    '''
+    pass
+
+class APIResponseError(APIError):
+    '''
+    Exception indicating unexpected API response.
+    '''
+    pass
+
 
 def append_parameters(url: str, params: Dict[str, str]) -> str:
     '''
@@ -163,28 +175,6 @@ def append_parameters(url: str, params: Dict[str, str]) -> str:
         url_before_query + query_string + urlencode(params) + url_after_query)
 
 
-def check_internet_connection():
-    servers = [
-        'google.com',
-        'youtube.com',
-        'facebook.com',
-        'vk.com'
-    ]
-    success_count = 0
-    for server in servers:
-        try:
-            response = urlopen('https://' + server).msg
-            if response == 'OK':
-                success_count += 1
-        except URLError:
-            pass
-    return (success_count > 0)
-
-
-def is_connection_error(exception):
-    return isinstance(exception, ConnectionError)
-
-
 class WSStoreAPI:
     '''
     Class used for fetching queue system data using API provided by the City
@@ -193,7 +183,8 @@ class WSStoreAPI:
     :param html_api_url: Base URL of API returning HTML encoded data
     :param json_api_url: Base URL of API returning JSON encoded data
     :ivar _api_urls: Base URLs of APIs provided in constructor
-    :ivar _office_key: Settable default office identifier
+    :ivar _office_key: Default office identifier (settable through
+        self.office_key property)
     '''
     def __init__(self, html_api_url: str, json_api_url: str) -> None:
         self._api_urls: Dict[str, str] = {
@@ -202,32 +193,9 @@ class WSStoreAPI:
         }
         self._office_key: Optional[str] = None
 
-    @retry(
-        retry_on_exception=is_connection_error,
-        wait_fixed=2000,
-        stop_max_attempt_number=5)
-    def get_offices(self) -> List[Dict[str, str]]:
-        '''
-        Retrieve office identifiers list from HTML API
-
-        The list can be used to get office-specific data using the JSON API.
-
-        Function retries 5 times on connection errors, waiting 2 seconds
-        between retries.
-
-        :returns: Office identifiers list
-        '''
-        # Make a HTTP request for fetching HTML data
-        try:
-            request = urlopen(self._api_urls['html'], timeout=5)
-            response = request.read().decode('utf-8')
-        except (URLError, socket.timeout, socket.gaierror):
-            raise ConnectionError('Cannot connect to the API')
-            
-        # Parse fetched data
-        parser = OfficeListParser()
-        parser.feed(response)
-        return parser.get_result()
+    #
+    # Private methods used internally
+    #
 
     @retry(
         retry_on_exception=is_connection_error,
@@ -247,9 +215,10 @@ class WSStoreAPI:
         :returns: Resulting dictionary
         '''
         if office_key is None:
-            if self._office_key is None:
-                raise AssertionError('Office key not provided')
             office_key = self._office_key
+        # Check argument's validity
+        if office_key is None:
+            raise AssertionError('Office key not provided')
         from apikey import apikey
         # Prepare HTTP request GET parameters
         parameters = {
@@ -263,16 +232,47 @@ class WSStoreAPI:
                 timeout=5)
             response = request.read().decode('utf-8').strip()
         except (URLError, socket.timeout, socket.gaierror):
-            raise ConnectionError('Cannot connect to the API')
+            raise APIConnectionError('Cannot connect to the API')
         # Parse fetched data
         data = json.loads(response)
         # Raise an error if API returned error response
         if type(data['result']) == str:
             if data.get('error') is not None:
-                raise APIError(data['error'])
+                raise APIResponseError(data['error'])
             else:
-                raise APIError(data['result'])
+                raise APIResponseError(data['result'])
         return data
+
+    #
+    # Public methods
+    #
+
+    @retry(
+        retry_on_exception=is_connection_error,
+        wait_fixed=2000,
+        stop_max_attempt_number=5)
+    def get_office_list(self) -> List[Dict[str, str]]:
+        '''
+        Retrieve office identifiers list from HTML API
+
+        The list can be used to get office-specific data using the JSON API.
+
+        Function retries 5 times on connection errors, waiting 2 seconds
+        between retries.
+
+        :returns: Office identifiers list
+        '''
+        # Make a HTTP request for fetching HTML data
+        try:
+            request = urlopen(self._api_urls['html'], timeout=5)
+            response = request.read().decode('utf-8')
+        except (URLError, socket.timeout, socket.gaierror):
+            raise APIConnectionError('Cannot connect to the API')
+            
+        # Parse fetched data
+        parser = OfficeListParser()
+        parser.feed(response)
+        return parser.get_result()
 
     def get_matters_with_samples(
             self, office_key: Optional[str] = None) -> List[Dict[str, Union[str, Optional[int]]]]:
@@ -299,6 +299,10 @@ class WSStoreAPI:
         }
             for group in data['result']['grupy']
         ], key=lambda matter: matter['name'])
+
+    #
+    # Properties
+    #
 
     @property
     def office_key(self) -> str:

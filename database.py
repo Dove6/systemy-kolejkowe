@@ -1,5 +1,5 @@
 import sqlite3
-from api import WSStoreAPI, APIError
+from api import WSStoreAPI
 
 from types import TracebackType
 from typing import Union, Optional, Dict, List, Tuple, Any
@@ -68,6 +68,13 @@ class SQLite3Cursor:
         return False
 
 
+class DatabaseError(Exception):
+    '''
+    Exception indicating errors during accessing the underlying database.
+    '''
+    pass
+
+
 class CachedAPI(WSStoreAPI):
     '''
     Subclass of WWStoreApi, which caches fetched data using an SQLite3
@@ -77,19 +84,27 @@ class CachedAPI(WSStoreAPI):
     :param json_api_url: Base URL of API returning JSON encoded data
     :param cache_filename: SQLite3 database filename (defaults to ':memory:')
     :ivar _api_urls: Base URLs of APIs provided in constructor
-    :ivar _office_key: Settable default office identifier
+    :ivar _office_key: Default office identifier (settable through
+        self.office_key property)
     :ivar _filename: SQLite3 database filename provided in constructor
+    :ivar _cooldown: Minimal interval between API calls in seconds (default
+        value equals 60, settable through self.cooldown property)
     '''
     def __init__(
             self, html_api_url: str, json_api_url: str,
             cache_filename: Optional[str] = None) -> None:
         super().__init__(html_api_url, json_api_url)
         if cache_filename is None:
-            self._filename = ':memory:'
+            self._filename: str = ':memory:'
         else:
-            self._filename = cache_filename
+            self._filename: str = cache_filename
         self._init_tables()
         self._remove_old_samples()
+        self._cooldown: int = 60
+
+    #
+    # Methods called during initialization
+    #
 
     def _init_tables(self) -> None:
         '''
@@ -148,6 +163,10 @@ class CachedAPI(WSStoreAPI):
                 WHERE DATETIME(time, 'utc') < DATETIME('now', '-1 hour')
             ''')
 
+    #
+    # Private methods used internally
+    #
+
     def _get_office_id(
             self, office_key: Optional[str] = None) -> Optional[int]:
         '''
@@ -161,17 +180,19 @@ class CachedAPI(WSStoreAPI):
         '''
         if office_key is None:
             office_key = self._office_key
-        # checking argument's validity
+        # Check argument's validity
+        if office_key is None:
+            raise AssertionError('Office key not provided')
         if type(office_key) is not str:
             raise TypeError('Office key has to be of type str')
-        # checking database for matching office entry
+        # Check database for matching office entry
         with SQLite3Cursor(self._filename) as cursor:
             office_id = cursor.execute('''
                 SELECT id
                 FROM offices
                 WHERE key = ?
             ''', (office_key, )).fetchone()
-        # returning found office ID (or None on failure)
+        # Return found office ID (or None on failure)
         if office_id is None:
             return None
         else:
@@ -193,7 +214,9 @@ class CachedAPI(WSStoreAPI):
         '''
         if office_key is None:
             office_key = self._office_key
-        # checking arguments' validity
+        # Check arguments' validity
+        if office_key is None:
+            raise AssertionError('Office key not provided')
         if type(matter_ordinal) not in [int, type(None)]:
             try:
                 matter_ordinal = int(matter_ordinal)
@@ -204,9 +227,9 @@ class CachedAPI(WSStoreAPI):
                 matter_group_id = int(matter_group_id)
             except (ValueError, TypeError):
                 raise TypeError("Matter's group's ID must be convertible to int")
-        # checking database for matching matter entry
+        # Check database for matching matter entry
+        office_id = self._get_office_id(office_key)
         with SQLite3Cursor(self._filename) as cursor:
-            office_id = self._get_office_id(office_key)
             if matter_ordinal is None:
                 matter_id = cursor.execute(
                     '''
@@ -223,7 +246,7 @@ class CachedAPI(WSStoreAPI):
                     WHERE ordinal = ? AND group_id = ? AND office_id = ?
                     ''', (matter_ordinal, matter_group_id, office_id)
                 ).fetchone()
-        # returning found matter ID (or None on failure)
+        # Return found matter ID (or None on failure)
         if matter_id is None:
             return None
         else:
@@ -240,10 +263,10 @@ class CachedAPI(WSStoreAPI):
             belongs to
         :returns: True if a sample exists, False otherwise
         '''
-        # checking arguments' validity
+        # Check arguments' validity
         if type(time) is not str:
             raise TypeError('Time has to be of type str')
-        # checking database for matching matter entry
+        # Check database for matching matter entry
         with SQLite3Cursor(self._filename) as cursor:
             result = cursor.execute(
                 '''
@@ -252,94 +275,11 @@ class CachedAPI(WSStoreAPI):
                 WHERE time = ? AND matter_id = ?
                 ''', (time, matter_id)
             ).fetchone()
-        # returning found matter ID (or None on failure)
+        # Return found matter ID (or None on failure)
         if result[0] == 0:
             return False
         else:
             return True
-
-    def get_office_list(self) -> OfficeList:
-        '''
-        Retrieve cached office identifiers list if available, otherwise
-        fetch it using API.
-
-        The list can be used to get office-specific data.
-
-        :returns: Office identifiers list
-        '''
-        with SQLite3Cursor(self._filename) as cursor:
-            result = cursor.execute(
-                '''
-                SELECT name, key
-                FROM offices
-                ORDER BY name
-                ''')
-            result_list = [{'name': name, 'key': key} for name, key in result]
-        if len(result_list) != 0:
-            return result_list
-        else:
-            result_list = super().get_offices()
-            self._store_office_list(result_list)
-            return result_list
-
-    def get_matter_list(
-            self, office_key: Optional[str] = None) -> MatterList:
-        '''
-        Retrieve cached administrative matter list if available, otherwise
-        fetch it using API.
-
-        The list can be used to get matter-specific queue data.
-
-        :returns: Administrative matter description list
-        '''
-        if office_key is None:
-            office_key = self._office_key
-        office_id = self._get_office_id(office_key)
-        with SQLite3Cursor(self._filename) as cursor:
-            result = cursor.execute(
-                '''
-                SELECT name, ordinal, group_id
-                FROM matters
-                WHERE office_id = ?
-                ORDER BY name
-                ''', (office_id, ))
-            result_list = [{
-                'name': str(name),
-                'ordinal': int(ordinal) if ordinal is not None else None,
-                'group_id': int(group_id)
-            } for name, ordinal, group_id in result]
-        return result_list
-
-    def get_sample_list(
-            self, matter_ordinal: Optional[int], matter_group_id: int,
-            office_key: Optional[str] = None) -> SampleList:
-        '''
-        Retrieve all cached time samples associated with given administrative
-        matter.
-
-        :param matter_ordinal: Requested matter's ordinal number
-        :param matter_group_id: Requested matter's group ID
-        :param office_key: Key identifier of an office the matter belongs to
-            (defaults to self.office_key)
-        :returns: List of time samples of queue connected with requested
-            administrative matter
-        '''
-        matter_id = self._get_matter_id(matter_ordinal, matter_group_id, office_key)
-        with SQLite3Cursor(self._filename) as cursor:
-            result = cursor.execute(
-                '''
-                SELECT queue_length, open_counters, current_number, time
-                FROM samples
-                WHERE matter_id = ?
-                ORDER BY time
-                ''', (matter_id, ))
-            result_list = [{
-                'queue_length': int(queue_length),
-                'open_counters': int(open_counters),
-                'current_number': str(current_number),
-                'time': str(time)
-            } for queue_length, open_counters, current_number, time in result]
-        return result_list
 
     def _get_seconds_since_last_connection(
             self, office_key: Optional[str] = None) -> Optional[int]:
@@ -354,20 +294,46 @@ class CachedAPI(WSStoreAPI):
         '''
         if office_key is None:
             office_key = self._office_key
+        # Check arguments' validity
+        if office_key is None:
+            raise AssertionError('Office key not provided')
+        # Query database for difference in time since last connection
+        # (in seconds)
+        office_id = self._get_office_id(office_key)
         with SQLite3Cursor(self._filename) as cursor:
-            office_id = self._get_office_id(office_key)
             cursor.execute('''
-                SELECT ((STRFTIME('%s', 'now', 'localtime')
-                - STRFTIME('%s', time)) / 60 > 0)
+                SELECT (STRFTIME('%s', 'now', 'localtime')
+                - STRFTIME('%s', time))
                 FROM last_connection
                 WHERE office_id = ?
                 ''', (office_id,)
             )
-            result = cursor.fetchone()[0]
-            if result is None or result:
-                return True
-            else:
-                return False
+            # Return result of query
+            return cursor.fetchone()[0]
+
+    def _update_last_connection_time(
+            self, office_key: Optional[str] = None) -> None:
+        '''
+        Set time of last API connection to current time.
+        (internal function)
+
+        :param office_key: Key identifier of an office which data were
+            requested (defaults to self.office_key)
+        '''
+        if office_key is None:
+            office_key = self._office_key
+        # Check arguments' validity
+        if office_key is None:
+            raise AssertionError('Office key not provided')
+        # Update appropriate table row
+        office_id = self._get_office_id(office_key)
+        with SQLite3Cursor(self._filename) as cursor:
+            cursor.execute(
+                '''
+                UPDATE last_connection
+                SET time = DATETIME('now', 'localtime')
+                WHERE office_id = ?
+                ''', (office_id,))
 
     def _store_office_list(self, office_list: OfficeList) -> None:
         '''
@@ -383,6 +349,8 @@ class CachedAPI(WSStoreAPI):
                     (office['name'], office['key'])
                     for office in office_list
                 ])
+            # Prepare entries in last_connection table for storing time
+            # of last API call
             office_ids = [
                 (self._get_office_id(office['key']),)
                 for office in office_list]
@@ -412,13 +380,8 @@ class CachedAPI(WSStoreAPI):
                     matter['name'], matter['ordinal'], matter['group_id'],
                     office_id)
             )
+            # ID of matter = ID of last modified row
             inserted_id = cursor.lastrowid
-            cursor.execute(
-                '''
-                UPDATE last_connection
-                SET time = DATETIME('now', 'localtime')
-                WHERE office_id = ?
-                ''', (office_id,))
             return inserted_id
 
     def _store_matter_list(
@@ -433,6 +396,10 @@ class CachedAPI(WSStoreAPI):
         '''
         if office_key is None:
             office_key = self._office_key
+        # Check arguments' validity
+        if office_key is None:
+            raise AssertionError('Office key not provided')
+        # Insert content of matters' list into database
         office_id = self._get_office_id(office_key)
         with SQLite3Cursor(self._filename) as cursor:
             cursor.executemany('''
@@ -444,12 +411,6 @@ class CachedAPI(WSStoreAPI):
                 matter['group_id'],
                 office_id
             ) for matter in matter_list]
-            )
-            cursor.execute('''
-                UPDATE last_connection
-                SET time = DATETIME('now', 'localtime')
-                WHERE office_id = ?
-                ''', (office_id,)
             )
 
     def _store_sample(self, matter_id: int, sample: SampleData) -> None:
@@ -499,13 +460,109 @@ class CachedAPI(WSStoreAPI):
                     sample['queue_length'], sample['current_number'],
                     matter_id) for sample in sample_list])
 
+    #
+    # Public methods
+    #
+
+    def get_office_list(self) -> OfficeList:
+        '''
+        Retrieve cached office identifiers list if available, otherwise
+        fetch it using API.
+
+        The list can be used to get office-specific data.
+
+        :returns: Office identifiers list
+        '''
+        with SQLite3Cursor(self._filename) as cursor:
+            result = cursor.execute(
+                '''
+                SELECT name, key
+                FROM offices
+                ORDER BY name
+                ''')
+            result_list = [{'name': name, 'key': key} for name, key in result]
+        if len(result_list) != 0:
+            return result_list
+        else:
+            # If nothing's in database, query the API
+            result_list = super().get_office_list()
+            self._store_office_list(result_list)
+            return result_list
+
+    def get_matter_list(
+            self, office_key: Optional[str] = None) -> MatterList:
+        '''
+        Retrieve cached administrative matter list if available, otherwise
+        fetch it using API.
+
+        The list can be used to get matter-specific queue data.
+
+        :returns: Administrative matter description list
+        '''
+        if office_key is None:
+            office_key = self._office_key
+        # Check arguments' validity
+        if office_key is None:
+            raise AssertionError('Office key not provided')
+        # Query the database for matters
+        office_id = self._get_office_id(office_key)
+        with SQLite3Cursor(self._filename) as cursor:
+            result = cursor.execute(
+                '''
+                SELECT name, ordinal, group_id
+                FROM matters
+                WHERE office_id = ?
+                ORDER BY name
+                ''', (office_id, ))
+            result_list = [{
+                'name': str(name),
+                'ordinal': int(ordinal) if ordinal is not None else None,
+                'group_id': int(group_id)
+            } for name, ordinal, group_id in result]
+        return result_list
+
+    def get_sample_list(
+            self, matter_ordinal: Optional[int], matter_group_id: int,
+            office_key: Optional[str] = None) -> SampleList:
+        '''
+        Retrieve all cached time samples associated with given administrative
+        matter.
+
+        :param matter_ordinal: Requested matter's ordinal number
+        :param matter_group_id: Requested matter's group ID
+        :param office_key: Key identifier of an office the matter belongs to
+            (defaults to self.office_key)
+        :returns: List of time samples of queue connected with requested
+            administrative matter
+        '''
+        matter_id = self._get_matter_id(matter_ordinal, matter_group_id, office_key)
+        with SQLite3Cursor(self._filename) as cursor:
+            result = cursor.execute(
+                '''
+                SELECT queue_length, open_counters, current_number, time
+                FROM samples
+                WHERE matter_id = ?
+                ORDER BY time
+                ''', (matter_id, ))
+            result_list = [{
+                'queue_length': int(queue_length),
+                'open_counters': int(open_counters),
+                'current_number': str(current_number),
+                'time': str(time)
+            } for queue_length, open_counters, current_number, time in result]
+        return result_list
+
     def update(self) -> None:
         '''
         Get data from API and store them in cache.
         '''
+        # Check time passed since last API call
         passed_time = self._get_seconds_since_last_connection()
-        if passed_time > 60 or passed_time is None:
+        if passed_time > self._cooldown or passed_time is None:
+            # If passed more than self._cooldown seconds or there is no
+            # information about previous call, proceed with the update
             matters_with_samples = self.get_matters_with_samples()
+            self._update_last_connection_time()
             office_id = self._get_office_id(self._office_key)
             for matter in matters_with_samples:
                 matter_id = self._get_matter_id(matter['ordinal'], matter['group_id'])
@@ -513,3 +570,25 @@ class CachedAPI(WSStoreAPI):
                     matter_id = self._store_matter(office_id, matter)
                 if not self._check_if_sample_exists(matter['time'], matter_id):
                     self._store_sample(matter_id, matter)
+
+    #
+    # Properties
+    #
+
+    @property
+    def cooldown(self) -> int:
+        '''
+        Minimal interval between API calls in seconds.
+
+        :raises: :class:`TypeError`: Trying to assign non-integer value
+        '''
+        return self._cooldown
+
+    @cooldown.setter
+    def cooldown(self, value: int) -> None:
+        if type(value) is int:
+            self._cooldown = value
+            if value < 30:
+                print('Warning: too short API polling interval')
+        else:
+            raise TypeError('Cooldown must be an integer')
