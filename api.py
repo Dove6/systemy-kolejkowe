@@ -8,6 +8,11 @@ import json
 from typing import Union, Optional, Dict, List, Tuple, Any
 from retrying import retry
 
+OfficeData = Dict[str, str]
+OfficeList = List[OfficeData]
+MatterSampleData = Dict[str, Union[str, Optional[int]]]
+MatterSampleList = List[MatterSampleData]
+
 
 class OfficeListParser(HTMLParser):
     '''
@@ -129,11 +134,13 @@ class APIError(Exception):
     '''
     pass
 
+
 class APIConnectionError(APIError):
     '''
     Exception indicating errors during sending API request.
     '''
     pass
+
 
 class APIResponseError(APIError):
     '''
@@ -173,6 +180,10 @@ def append_parameters(url: str, params: Dict[str, str]) -> str:
             query_string += '&'
     return (
         url_before_query + query_string + urlencode(params) + url_after_query)
+
+
+def is_connection_error(exception):
+    return isinstance(exception, APIConnectionError)
 
 
 class WSStoreAPI:
@@ -251,7 +262,7 @@ class WSStoreAPI:
         retry_on_exception=is_connection_error,
         wait_fixed=2000,
         stop_max_attempt_number=5)
-    def get_office_list(self) -> List[Dict[str, str]]:
+    def get_office_list(self) -> OfficeList:
         '''
         Retrieve office identifiers list from HTML API
 
@@ -268,14 +279,13 @@ class WSStoreAPI:
             response = request.read().decode('utf-8')
         except (URLError, socket.timeout, socket.gaierror):
             raise APIConnectionError('Cannot connect to the API')
-            
         # Parse fetched data
         parser = OfficeListParser()
         parser.feed(response)
         return parser.get_result()
 
     def get_matters_with_samples(
-            self, office_key: Optional[str] = None) -> List[Dict[str, Union[str, Optional[int]]]]:
+            self, office_key: Optional[str] = None) -> MatterSampleList:
         '''
         Retrieve office-specific list of current states of queues for each
         administrative matter available in the office using the JSON API.

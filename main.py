@@ -1,5 +1,4 @@
 from database import CachedAPI
-from api import APIError
 from gui import HiDpiApplication, QueueSystemWindow
 
 api_urls = {

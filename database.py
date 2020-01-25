@@ -5,8 +5,7 @@ from types import TracebackType
 from typing import Union, Optional, Dict, List, Tuple, Any
 from retrying import retry
 
-OfficeData = Dict[str, str]
-OfficeList = List[OfficeData]
+from api import OfficeData, OfficeList
 MatterData = Dict[str, Union[str, Optional[int]]]
 MatterList = List[MatterData]
 SampleData = Dict[str, Union[str, int]]
