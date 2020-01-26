@@ -1,12 +1,13 @@
+from functools import partial
 from random import shuffle, randint
 from typing import Union, Optional, Dict, List, Any
 
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QComboBox, QTableWidget, QVBoxLayout, QWidget,
-    QAbstractItemView, QHeaderView, QTableWidgetItem, QStatusBar, QLabel, QSizeGrip
+    QAbstractItemView, QHeaderView, QTableWidgetItem, QStatusBar, QLabel, QCheckBox
 )
-from PyQt5.QtCore import Qt, QTimer, QDateTime, QPointF, QItemSelection, QThread, pyqtSignal, QSize
-from PyQt5.QtGui import QPainter, QColor, QFont, QIcon, QMovie
+from PyQt5.QtCore import Qt, QTimer, QDateTime, QPointF, QItemSelection, QThread, pyqtSignal, QSize, QSettings
+from PyQt5.QtGui import QPainter, QColor, QFont, QIcon, QMovie, QResizeEvent, QMoveEvent
 from PyQt5.QtChart import QChart, QChartView, QLineSeries, QValueAxis, QDateTimeAxis
 
 from api import APIError
@@ -274,7 +275,7 @@ class QueueSystemSeries(QLineSeries):
         '''
         return self._user_data
 
-    def setUserData(self, data: Any):
+    def setUserData(self, data: Any) -> None:
         '''
         Associate user data with the series.
 
@@ -307,101 +308,13 @@ class DetailedPointF(QPointF):
         '''
         return self._user_data
 
-    def setUserData(self, data: Any):
+    def setUserData(self, data: Any) -> None:
         '''
         Associate user data with the point.
 
         :param data: Arbitrary user data to be assigned to the point
         '''
         self._user_data = data
-
-
-class StatusBar(QStatusBar):
-    '''
-    Simple status bar for displaying current state of application:
-    - idle,
-    - busy,
-    - error occured.
-
-    Qt method naming convention is preserved.
-
-    :ivar _resources: Icons used as a depiction of current application'same
-        state (may be animated)
-    :ivar _labels: Labels displaying status: one for icon and one for text
-        description
-    '''
-    def __init__(self) -> None:
-        super().__init__()
-        # Get rid of size grip
-        self.setSizeGripEnabled(False)
-        # Load and prepare required resources
-        self._resources = {
-            'ok': QIcon('img/ok.png'),
-            'error': QIcon('img/error.png'),
-            'web_error': QIcon('img/web_error.png'),
-            'db_error': QIcon('img/db_error.png'),
-            'spinner': QMovie('img/spinner.gif')
-        }
-        self._resources['spinner'].setScaledSize(QSize(16, 16))
-        self._resources['spinner'].start()
-        # Create and configure needed labels
-        self._labels = {
-            'icon': QLabel(),
-            'description': QLabel()
-        }
-        for label in self._labels.values():
-            self.addWidget(label)
-
-    def showSuccess(self) -> None:
-        '''
-        Depict idle state of the app.
-        '''
-        for label in self._labels.values():
-            label.show()
-        self._labels['icon'].setPixmap(self._resources['ok'].pixmap(16, 16))
-        self._labels['description'].setText('Gotowe.')
-
-    def showBusy(self) -> None:
-        '''
-        Indicate occuring update of data (in cache or in GUI).
-        '''
-        for label in self._labels.values():
-            label.show()
-        self._labels['icon'].setMovie(self._resources['spinner'])
-        self._labels['icon'].setFixedSize(16, 16)
-        self._labels['description'].setText('Aktualizacja...')
-
-    def showError(self, cause: Union[Exception, str]) -> None:
-        '''
-        Show error message or exception in status bar.
-
-        :param cause: Exception or error message to be displayed in status bar
-        '''
-        for label in self._labels.values():
-            label.show()
-        if isinstance(cause, APIError):
-            # API-related error
-            self._labels['icon'].setPixmap(
-                self._resources['web_error'].pixmap(16, 16))
-            self._labels['description'].setText('Błąd: ' + str(cause))
-        elif isinstance(cause, DatabaseError):
-            # Cache-related error
-            self._labels['icon'].setPixmap(
-                self._resources['db_error'].pixmap(16, 16))
-            self._labels['description'].setText('Błąd: ' + str(cause))
-        else:
-            # Other errors
-            self._labels['icon'].setPixmap(
-                self._resources['error'].pixmap(16, 16))
-            self._labels['description'].setText('Błąd: ' + str(cause))
-
-    def clear(self) -> None:
-        '''
-        Reset and hide status bar's labels.
-        '''
-        for label in self._labels.values():
-            label.setText('')
-            label.hide()
 
 
 class QueueSystemTable(QTableWidget):
@@ -507,6 +420,178 @@ class QueueSystemTable(QTableWidget):
         else:
             index = None
         self.window().chart.setTopSeriesIndex(index)
+
+
+class Settings(QSettings):
+    def __init__(self, filename: str = 'settings.ini') -> None:
+        super().__init__(filename, QSettings.IniFormat)
+
+    def value(
+            self, key: str, default_value: Any = None,
+            value_type: type = type(None),
+            set_if_missing: bool = False) -> None:
+        if isinstance(None, value_type):
+            return_value = super().value(key, default_value)
+        else:
+            return_value = super().value(key, default_value, value_type)
+        if set_if_missing:
+            if super().value(key) is None:
+                self.setValue(key, return_value)
+        return return_value
+
+
+class StatusBar(QStatusBar):
+    '''
+    Simple status bar for displaying current state of application:
+    - idle,
+    - busy,
+    - error occured
+    and configuration check boxes.
+
+    Qt method naming convention is preserved.
+
+    :ivar _resources: Icons used as a depiction of current application'same
+        state (may be animated)
+    :ivar _labels: Labels displaying status: one for icon and one for text
+        description
+    :ivar _check_boxes: Check boxes for the user to customize application's
+        behavior
+    :ivar _settings: Settings object storing check boxes' configuration
+    '''
+    def __init__(self) -> None:
+        super().__init__()
+        # Get rid of size grip
+        self.setSizeGripEnabled(False)
+        # Load and prepare required resources
+        self._resources = {
+            'ok': QIcon('img/ok.png'),
+            'error': QIcon('img/error.png'),
+            'web_error': QIcon('img/web_error.png'),
+            'db_error': QIcon('img/db_error.png'),
+            'spinner': QMovie('img/spinner.gif')
+        }
+        self._resources['spinner'].setScaledSize(QSize(16, 16))
+        self._resources['spinner'].start()
+        # Create and configure needed labels
+        self._labels = {
+            'icon': QLabel(),
+            'description': QLabel()
+        }
+        for label in self._labels.values():
+            self.addWidget(label)
+        # Create and configure needed check boxes
+        self._check_boxes = {
+            'restore_last_closed': CheckBox('Przywracaj ostatnio zamknięty urząd'),
+            'update_only_current': QCheckBox('Aktualizuj tylko bieżący urząd')
+        }
+        for check_box in self._check_boxes.values():
+            self.addPermanentWidget(check_box)
+        self._settings: Optional[QSettings] = None
+
+    def setSettings(self, settings: Optional[Settings]) -> None:
+        '''
+        Bind check boxes to the settings object storing their states.
+
+        :param settings: Settings object for the check boxes to connect to
+            (may be None to disable the check boxes)
+        '''
+        self._settings = settings
+        if settings is not None:
+            # If Settings object is provided, refresh it
+            settings.sync()
+            # Enable and update every check box
+            for name, check_box in self._check_boxes.items():
+                check_box.setChecked(settings.value(
+                    'check_box/' + name, False, value_type=bool, set_if_missing=True))
+                check_box.stateChanged.connect(partial(
+                    lambda name, state: settings.setValue(
+                        'check_box/' + name, bool(state)), name))
+                check_box.setEnabled(True)
+        else:
+            # If Settings object is removed, freeze check boxes and clear
+            # their callbacks
+            for check_box in self._check_boxes.values():
+                check_box.setEnabled(False)
+                try:
+                    check_box.stateChanged.disconnect()
+                except TypeError:
+                    # If nothing is connected to the signal, an exception will be
+                    # raised
+                    pass
+
+    def showSuccess(self) -> None:
+        '''
+        Depict idle state of the app.
+        '''
+        for label in self._labels.values():
+            label.show()
+        self._labels['icon'].setPixmap(self._resources['ok'].pixmap(16, 16))
+        self._labels['description'].setText('Gotowe.')
+
+    def showBusy(self) -> None:
+        '''
+        Indicate occuring update of data (in cache or in GUI).
+        '''
+        for label in self._labels.values():
+            label.show()
+        self._labels['icon'].setMovie(self._resources['spinner'])
+        self._labels['icon'].setFixedSize(16, 16)
+        self._labels['description'].setText('Aktualizacja...')
+
+    def showError(self, cause: Union[Exception, str]) -> None:
+        '''
+        Show error message or exception in status bar.
+
+        :param cause: Exception or error message to be displayed in status bar
+        '''
+        for label in self._labels.values():
+            label.show()
+        if isinstance(cause, APIError):
+            # API-related error
+            self._labels['icon'].setPixmap(
+                self._resources['web_error'].pixmap(16, 16))
+            self._labels['description'].setText('Błąd: ' + str(cause))
+        elif isinstance(cause, DatabaseError):
+            # Cache-related error
+            self._labels['icon'].setPixmap(
+                self._resources['db_error'].pixmap(16, 16))
+            self._labels['description'].setText('Błąd: ' + str(cause))
+        else:
+            # Other errors
+            self._labels['icon'].setPixmap(
+                self._resources['error'].pixmap(16, 16))
+            self._labels['description'].setText('Błąd: ' + str(cause))
+
+    def clearState(self) -> None:
+        '''
+        Reset and hide status bar's labels.
+        '''
+        for label in self._labels.values():
+            label.setText('')
+            label.hide()
+
+
+class CheckBox(QCheckBox):
+    def __init__(self, text: str, initial_state: bool = False) -> None:
+        super().__init__(text)
+        self.setChecked(initial_state)
+        self._user_data = None
+
+    def userData(self) -> Any:
+        '''
+        Get user data associated with the check box.
+
+        :returns: Arbitrary user data assigned to the check box
+        '''
+        return self._user_data
+
+    def setUserData(self, data: Any) -> None:
+        '''
+        Associate user data with the check box.
+
+        :param data: Arbitrary user data to be assigned to the check_box
+        '''
+        self._user_data = data
 
 
 class CacheThread(QThread):
@@ -640,16 +725,22 @@ class QueueSystemWindow(QMainWindow):
     :ivar _api: CachedAPI provided in constructor
     :ivar _combo: Window's combo box object
     :ivar _chart: Window's chart of queue data samples object
+    :ivar _settings: Window's configuration file object
+    :ivar _status: Window's status bar containing application state
+        description and basic settings
     :ivar _table: Window's table of administrative matters object
-    :ivar _timer: Window's API call timer
     :ivar _threads: Window's dictionary of threads used for updating API
         and GUI data
+    :ivar _timer: Window's API call timer
     '''
     def __init__(self, api: CachedAPI, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self._api: CachedAPI = api
-        # Set window's size
-        self.resize(750, 580)
+        # Configure settings file and load saved application's settings:
+        # window's size and position
+        self._settings: Settings = Settings()
+        self.resize(self._settings.value('window/size', QSize(750, 580), set_if_missing=True))
+        self.move(self._settings.value('window/position', self.pos(), set_if_missing=True))
         # Create ComboBox object
         self._combo: ComboBox = ComboBox()
         # Create and setup chart and its view
@@ -660,7 +751,8 @@ class QueueSystemWindow(QMainWindow):
         # Create the table
         self._table: QueueSystemTable = QueueSystemTable()
         # Create the status bar for the window
-        self._status = StatusBar()
+        self._status: StatusBar = StatusBar()
+        self._status.setSettings(self._settings)
         self.setStatusBar(self._status)
         # Create window's layout and place elements in it
         vbox_layout = QVBoxLayout()
@@ -760,7 +852,7 @@ class QueueSystemWindow(QMainWindow):
         try:
             self._threads['caching'].succeeded.disconnect()
         except TypeError:
-            # If nothin is connected to the signal, an exception will be
+            # If nothing is connected to the signal, an exception will be
             # raised
             pass
         # Make GUI setup thread run after caching data
@@ -777,7 +869,7 @@ class QueueSystemWindow(QMainWindow):
         try:
             self._threads['caching'].finished.disconnect()
         except TypeError:
-            # If nothin is connected to the signal, an exception will be
+            # If nothing is connected to the signal, an exception will be
             # raised
             pass
         # Reconnect succeeded signal to the GUI update thread
@@ -788,6 +880,14 @@ class QueueSystemWindow(QMainWindow):
         # Start timer again in order to update the widgets cyclically
         self._timer.start()
 
+    def resizeEvent(self, event: QResizeEvent) -> None:
+        super().resizeEvent(event)
+        self._settings.setValue('window/size', self.size())
+
+    def moveEvent(self, event: QMoveEvent) -> None:
+        super().moveEvent(event)
+        self._settings.setValue('window/position', self.pos())
+
     def _print_exception(self, exception: Exception) -> None:
         print('Exception occured in GUI subthreads:')
         print(exception)
@@ -797,6 +897,8 @@ class QueueSystemWindow(QMainWindow):
         Close the window and clean up.
         (internal function)
         '''
+        # Make sure the configuration is saved
+        self._settings.sync()
         # Stop the timer
         self._timer.stop()
         # Exit the threads
@@ -824,6 +926,13 @@ class QueueSystemWindow(QMainWindow):
         Window's table
         '''
         return self._table
+
+    @property
+    def settings(self) -> QSettings:
+        '''
+        Window's settings
+        '''
+        return self._settings
 
     @property
     def timer(self) -> QTimer:

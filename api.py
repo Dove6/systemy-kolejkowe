@@ -248,7 +248,7 @@ class WSStoreAPI:
                 timeout=5)
             response = request.read().decode('utf-8').strip()
         except (URLError, socket.timeout, socket.gaierror) as exc:
-            raise APIConnectionError('Cannot connect to the API') from e
+            raise APIConnectionError('Cannot connect to the API') from exc
         # Parse fetched data
         data = json.loads(response)
         # Raise an error if API returned error response
