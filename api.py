@@ -128,27 +128,6 @@ class OfficeListParser(HTMLParser):
         return self._office_list[:]
 
 
-class APIError(Exception):
-    '''
-    Exception indicating errors during fetching API data.
-    '''
-    pass
-
-
-class APIConnectionError(APIError):
-    '''
-    Exception indicating errors during sending API request.
-    '''
-    pass
-
-
-class APIResponseError(APIError):
-    '''
-    Exception indicating unexpected API response.
-    '''
-    pass
-
-
 def append_parameters(url: str, params: Dict[str, str]) -> str:
     '''
     Encode and append query parameters to an URL.
@@ -182,7 +161,31 @@ def append_parameters(url: str, params: Dict[str, str]) -> str:
         url_before_query + query_string + urlencode(params) + url_after_query)
 
 
-def is_connection_error(exception):
+class APIError(Exception):
+    '''
+    Exception indicating errors during fetching API data.
+    '''
+    pass
+
+
+class APIConnectionError(APIError):
+    '''
+    Exception indicating errors during sending API request.
+    '''
+    pass
+
+
+class APIResponseError(APIError):
+    '''
+    Exception indicating unexpected API response.
+    '''
+    pass
+
+
+def is_connection_error(exception) -> bool:
+    '''
+    Check if provided exception is related to connecting to API.
+    '''
     return isinstance(exception, APIConnectionError)
 
 
@@ -224,6 +227,10 @@ class WSStoreAPI:
         :param office_key: Requested office identifier
             (defaults to self.office_key)
         :returns: Resulting dictionary
+        :raises:
+            :class:`AssertionError`: Missing argument
+            :class:`APIConnectionError`: Error connecting to the API
+            :class:`APIResponseError`: Unexpected response from the API
         '''
         if office_key is None:
             office_key = self._office_key
@@ -272,6 +279,7 @@ class WSStoreAPI:
         between retries.
 
         :returns: Office identifiers list
+        :raises: :class:`APIConnectionError`: Error connecting to the API
         '''
         # Make a HTTP request for fetching HTML data
         try:

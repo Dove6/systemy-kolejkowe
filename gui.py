@@ -1,15 +1,16 @@
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QComboBox, QTableWidget, QVBoxLayout, QWidget,
-    QAbstractItemView, QHeaderView, QTableWidgetItem
+    QAbstractItemView, QHeaderView, QTableWidgetItem, QStatusBar, QLabel, QSizeGrip
 )
-from PyQt5.QtCore import Qt, QTimer, QDateTime, QPointF, QItemSelection, QThread, pyqtSignal
-from PyQt5.QtGui import QPainter, QColor, QFont
+from PyQt5.QtCore import Qt, QTimer, QDateTime, QPointF, QItemSelection, QThread, pyqtSignal, QSize
+from PyQt5.QtGui import QPainter, QColor, QFont, QIcon, QMovie
 from PyQt5.QtChart import QChart, QChartView, QLineSeries, QValueAxis, QDateTimeAxis
 from random import shuffle, randint
 
 from typing import Union, Optional, Dict, List, Tuple, Any
 from retrying import retry
 
+from api import APIError
 from database import MatterData, SampleList, CachedAPI
 
 
@@ -103,18 +104,29 @@ class QueueSystemChart(QChart):
         x_axis = QDateTimeAxis()
         x_axis.setFormat('hh:mm')
         x_axis.setTickCount(7)
-        current_time = QDateTime.currentDateTime()
-        x_axis.setRange(current_time.addSecs(-3600), current_time)
         x_axis.setTitleText('Godzina [hh:mm]')
         self.addAxis(x_axis, Qt.AlignBottom)
         # Setup vertical axis
         y_axis = QValueAxis()
-        y_axis.setRange(0, 20)
         y_axis.setTitleText('Liczba osób w kolejce')
         self.addAxis(y_axis, Qt.AlignLeft)
+        self.resetAxes()
 
         self.legend().setVisible(False)
         self._top_series: Optional[int] = None
+
+    def resetAxes(self) -> None:
+        '''
+        Reset chart's axes to default ranges
+        '''
+        x_axis, y_axis = self.axes()
+        current_time = QDateTime.currentDateTime()
+        x_axis.setRange(current_time.addSecs(-3600), current_time)
+        x_axis.hide()
+        x_axis.show()
+        y_axis.setMax(10)
+        y_axis.hide()
+        y_axis.show()
 
     def setSeriesCount(self, count: int) -> None:
         '''
@@ -134,6 +146,7 @@ class QueueSystemChart(QChart):
             self.addSeries(series)
             for axis in self.axes():
                 series.attachAxis(axis)
+        self.resetAxes()
 
     def setSeriesSamples(
             self, series_index: int, sample_list: SampleList) -> None:
@@ -304,6 +317,96 @@ class DetailedPointF(QPointF):
         self._user_data = data
 
 
+class StatusBar(QStatusBar):
+    '''
+    Simple status bar for displaying current state of application:
+    - idle,
+    - busy,
+    - error occured.
+
+    Qt method naming convention is preserved.
+
+    :ivar _resources: Icons used as a depiction of current application'same
+        state (may be animated)
+    :ivar _labels: Labels displaying status: one for icon and one for text
+        description
+    '''
+    def __init__(self) -> None:
+        super().__init__()
+        # Get rid of size grip
+        for child in self.children():
+            if type(child) is QSizeGrip:
+                self.removeWidget(child)
+        # Load and prepare required resources
+        self._resources = {
+            'ok': QIcon('img/ok.png'),
+            'error': QIcon('img/error.png'),
+            'web_error': QIcon('img/web_error.png'),
+            'db_error': QIcon('img/db_error.png'),
+            'spinner': QMovie('img/spinner.gif')
+        }
+        self._resources['spinner'].setScaledSize(QSize(16, 16))
+        self._resources['spinner'].start()
+        # Create and configure needed labels
+        self._labels = {
+            'icon': QLabel(),
+            'description': QLabel()
+        }
+        for label in self._labels.values():
+            self.addWidget(label)
+
+    def showSuccess(self) -> None:
+        '''
+        Depict idle state of the app.
+        '''
+        for label in self._labels.values():
+            label.show()
+        self._labels['icon'].setPixmap(self._resources['ok'].pixmap(16, 16))
+        self._labels['description'].setText('Gotowe.')
+
+    def showBusy(self) -> None:
+        '''
+        Indicate occuring update of data (in cache or in GUI).
+        '''
+        for label in self._labels.values():
+            label.show()
+        self._labels['icon'].setMovie(self._resources['spinner'])
+        self._labels['icon'].setFixedSize(16, 16)
+        self._labels['description'].setText('Aktualizacja...')
+
+    def showError(self, cause: Union[Exception, str]) -> None:
+        '''
+        Show error message or exception in status bar.
+
+        :param cause: Exception or error message to be displayed in status bar
+        '''
+        for label in self._labels.values():
+            label.show()
+        if isinstance(cause, APIError):
+            # API-related error
+            self._labels['icon'].setPixmap(
+                self._resources['web_error'].pixmap(16, 16))
+            self._labels['description'].setText('Błąd: ' + str(cause))
+        elif isinstance(cause, Exception):
+            # Cache-related error
+            self._labels['icon'].setPixmap(
+                self._resources['db_error'].pixmap(16, 16))
+            self._labels['description'].setText('Błąd: ' + str(cause))
+        else:
+            # Other errors
+            self._labels['icon'].setPixmap(
+                self._resources['error'].pixmap(16, 16))
+            self._labels['description'].setText('Błąd: ' + cause)
+
+    def clear(self) -> None:
+        '''
+        Reset and hide status bar's labels.
+        '''
+        for label in self._labels.values():
+            label.setText('')
+            label.hide()
+
+
 class QueueSystemTable(QTableWidget):
     '''
     Subclass of QTableWidget for displaying (only) current time samples data
@@ -449,8 +552,8 @@ class GUISetupThread(QThread):
     :cvar failed: pyqtSignal emitted on any exception
     :ivar _api: CachedAPI provided in constructor
     '''
-    gotMatter = pyqtSignal(int, dict, QColor)
-    gotMatterCount = pyqtSignal(int)
+    gotMatter: pyqtSignal = pyqtSignal(int, dict, QColor)
+    gotMatterCount: pyqtSignal = pyqtSignal(int)
     succeeded: pyqtSignal = pyqtSignal()
     failed: pyqtSignal = pyqtSignal(Exception)
 
@@ -459,17 +562,21 @@ class GUISetupThread(QThread):
         self._api: CachedAPI = api
 
     def run(self) -> None:
-        matter_list = self._api.get_matter_list()
-        self.gotMatterCount.emit(len(matter_list))
-        # Generate distinct colors associated with matters
-        colors = [QColor.fromHsl(
-            360 * i // (len(matter_list) + 1),
-            128,
-            randint(96, 192)
-        ) for i in range(len(matter_list) + 1)]
-        shuffle(colors)
-        for index, matter in enumerate(matter_list):
-            self.gotMatter.emit(index, matter, colors[index])
+        try:
+            matter_list = self._api.get_matter_list()
+            self.gotMatterCount.emit(len(matter_list))
+            # Generate distinct colors associated with matters
+            colors = [QColor.fromHsl(
+                360 * i // (len(matter_list) + 1),
+                128,
+                randint(96, 192)
+            ) for i in range(len(matter_list) + 1)]
+            shuffle(colors)
+            for index, matter in enumerate(matter_list):
+                self.gotMatter.emit(index, matter, colors[index])
+            self.succeeded.emit()
+        except Exception as e:
+            self.failed.emit(e)
 
 
 class GUIUpdateThread(QThread):
@@ -488,7 +595,7 @@ class GUIUpdateThread(QThread):
     :ivar _api: CachedAPI provided in constructor
     :ivar _chart: Chart provided in constructor
     '''
-    gotSampleList = pyqtSignal(int, list)
+    gotSampleList: pyqtSignal = pyqtSignal(int, list)
     succeeded: pyqtSignal = pyqtSignal()
     failed: pyqtSignal = pyqtSignal(Exception)
 
@@ -533,7 +640,7 @@ class QueueSystemWindow(QMainWindow):
         super().__init__(*args, **kwargs)
         self._api: CachedAPI = api
         # Set window's size
-        self.resize(750, 550)
+        self.resize(750, 580)
         # Create ComboBox object
         self._combo: ComboBox = ComboBox()
         # Create and setup chart and its view
@@ -543,6 +650,9 @@ class QueueSystemWindow(QMainWindow):
         chart_view.setRenderHint(QPainter.Antialiasing)
         # Create the table
         self._table: QueueSystemTable = QueueSystemTable()
+        # Create the status bar for the window
+        self._status = StatusBar()
+        self.setStatusBar(self._status)
         # Create window's layout and place elements in it
         vbox_layout = QVBoxLayout()
         vbox_layout.addWidget(self._combo)
@@ -554,16 +664,28 @@ class QueueSystemWindow(QMainWindow):
         self.setCentralWidget(main_widget)
         # Create the timer
         self._timer: QTimer = QTimer()
-        self._timer.setInterval(api.cooldown)
+        self._timer.setInterval(api.cooldown * 1000)
         # Create the dictionary of threads
         self._threads: Dict[str, QThread] = {
             'caching': CacheThread(api),
             'displaying': GUIUpdateThread(api, self._chart),
             'setting': GUISetupThread(api)
         }
+        # Connect caching thread's started signal to functions indicating
+        # busyness of the application
+        self._threads['caching'].started.connect(lambda: self.setCursor(Qt.BusyCursor))
+        self._threads['caching'].started.connect(self._status.showBusy)
         # Connect all threads' failed signals to exception logging function
+        # and all threads' finished signals to the function "debusying" mouse
+        # cursor
         for thread in self._threads.values():
             thread.failed.connect(self._print_exception)
+            thread.failed.connect(self._status.showError)
+            thread.finished.connect(self.unsetCursor)
+        # Connect GUI threads' succeeded signals to the status bar's success
+        # showing method
+        self._threads['displaying'].succeeded.connect(self._status.showSuccess)
+        self._threads['setting'].succeeded.connect(self._status.showSuccess)
         # Connect caching thread's succeeded signal to a method starting GUI
         # update
         self._threads['caching'].succeeded.connect(

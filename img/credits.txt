@@ -1,0 +1,19 @@
+web_error.png:
+Composition of "global" by srip and "cross" by Freepik.
+
+db_error.png:
+Composition of "database" by Pixel perfect and "cross" by Freepik.
+
+ok.png:
+"tick" by Pixelmeetup
+
+spinner.gif:
+Animation of "refresh" by Dave Gandy.
+
+All icons got from www.flaticon.com
+Authors' pages:
+(srip) https://www.flaticon.com/authors/srip
+(Pixel perfect) https://www.flaticon.com/authors/pixel-perfect
+(Freepik) https://www.flaticon.com/authors/freepik
+(Pixelmeetup) https://www.flaticon.com/authors/pixelmeetup
+(Dave Gandy) https://www.flaticon.com/authors/dave-gandy

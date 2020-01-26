@@ -12,6 +12,13 @@ SampleData = Dict[str, Union[str, int]]
 SampleList = List[SampleData]
 
 
+class DatabaseError(Exception):
+    '''
+    Exception indicating errors during accessing the underlying database.
+    '''
+    pass
+
+
 class SQLite3Cursor:
     '''
     Context manager for opening and automatically closing sqlite3 database
@@ -65,13 +72,6 @@ class SQLite3Cursor:
             self._connection.rollback()
         self._connection.close()
         return False
-
-
-class DatabaseError(Exception):
-    '''
-    Exception indicating errors during accessing the underlying database.
-    '''
-    pass
 
 
 class CachedAPI(WSStoreAPI):
@@ -569,6 +569,7 @@ class CachedAPI(WSStoreAPI):
                     matter_id = self._store_matter(office_id, matter)
                 if not self._check_if_sample_exists(matter['time'], matter_id):
                     self._store_sample(matter_id, matter)
+            self._remove_old_samples()
 
     #
     # Properties
