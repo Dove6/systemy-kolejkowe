@@ -1,3 +1,14 @@
+'''
+File containing database-related functionalities.
+
+Classes:
+DatabaseError
+    DatabaseInsertionError
+    DatabaseTemporaryError
+    DatabasePersistentError
+SQLite3Cursor
+CachedAPI
+'''
 import sqlite3
 from types import TracebackType
 from typing import Union, Optional, Dict, List, Tuple, Any
@@ -39,7 +50,7 @@ class DatabasePersistentError(DatabaseError):
     '''
 
 
-def is_temporary_database_error(exception):
+def is_temporary_database_error(exception) -> bool:
     '''
     Check, if provided exception is database-related, temporary and worth
     retrying.
@@ -141,8 +152,7 @@ class CachedAPI(WSStoreAPI):
         value equals 60, settable through self.cooldown property)
     '''
     def __init__(
-            self, html_api_url: str, json_api_url: str,
-            cache_filename: Optional[str] = None) -> None:
+            self, html_api_url: str, json_api_url: str, cache_filename: Optional[str] = None) -> None:
         super().__init__(html_api_url, json_api_url)
         if cache_filename is None:
             self._filename: str = ':memory:'
@@ -331,8 +341,7 @@ class CachedAPI(WSStoreAPI):
         else:
             return True
 
-    def _get_seconds_since_last_connection(
-            self, office_key: Optional[str] = None) -> Optional[int]:
+    def _get_seconds_since_last_connection(self, office_key: Optional[str] = None) -> Optional[int]:
         '''
         Retrieve number of seconds since last API request.
         (internal function)
@@ -360,8 +369,7 @@ class CachedAPI(WSStoreAPI):
             # Return result of query
             return cursor.fetchone()[0]
 
-    def _update_last_connection_time(
-            self, office_key: Optional[str] = None) -> None:
+    def _update_last_connection_time(self, office_key: Optional[str] = None) -> None:
         '''
         Set time of last API connection to current time.
         (internal function)
@@ -433,8 +441,7 @@ class CachedAPI(WSStoreAPI):
             inserted_id = cursor.lastrowid
             return inserted_id
 
-    def _store_matter_list(
-            self, office_key: Optional[str], matter_list: MatterList) -> None:
+    def _store_matter_list(self, office_key: Optional[str], matter_list: MatterList) -> None:
         '''
         Place given list of administrative matters' descriptions in cache.
         (internal function)

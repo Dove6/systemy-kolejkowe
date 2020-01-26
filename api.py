@@ -1,3 +1,13 @@
+'''
+File containing API-related functionalities.
+
+Classes:
+OfficeListParser
+APIError
+    APIConnectionError
+    APIResponseError
+WSStoreAPI
+'''
 from html.parser import HTMLParser
 from urllib.request import urlopen
 from urllib.parse import urlencode
