@@ -22,10 +22,11 @@ from typing import Union, Optional, Dict, List, Any
 
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QComboBox, QTableWidget, QVBoxLayout, QWidget, QAbstractItemView,
-    QHeaderView, QTableWidgetItem, QStatusBar, QLabel, QCheckBox)
+    QHeaderView, QTableWidgetItem, QStatusBar, QLabel, QCheckBox, QScrollArea, QSizePolicy)
 from PyQt5.QtCore import (
     Qt, QTimer, QDateTime, QPointF, QItemSelection, QThread, pyqtSignal, QSize, QSettings)
-from PyQt5.QtGui import QPainter, QColor, QFont, QIcon, QMovie, QResizeEvent, QMoveEvent
+from PyQt5.QtGui import (
+    QPainter, QColor, QFont, QIcon, QMovie, QResizeEvent, QMoveEvent, QGuiApplication)
 from PyQt5.QtChart import QChart, QChartView, QLineSeries, QValueAxis, QDateTimeAxis
 
 from api import APIError
@@ -58,6 +59,7 @@ class HiDpiApplication(QApplication):
         # https://leomoon.com/journal/python/high-dpi-scaling-in-pyqt5/
         QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
         QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
+        QGuiApplication.setHighDpiScaleFactorRoundingPolicy(Qt.HighDpiScaleFactorRoundingPolicy.Round)
 
         super().__init__(*args, **kwargs)
 
@@ -521,8 +523,8 @@ class StatusConfigBar(QStatusBar):
             'icon': QLabel(),
             'description': QLabel()
         }
-        for label in self._labels.values():
-            self.addWidget(label)
+        self.addPermanentWidget(self._labels['icon'])
+        self.addPermanentWidget(self._labels['description'], 1)
         # Create and configure needed check boxes
         self._check_boxes = {
             'restore_last_closed': QCheckBox('Przywracaj ostatnio zamknięty urząd'),
@@ -613,7 +615,21 @@ class StatusConfigBar(QStatusBar):
             # Other errors
             pixmap = self._resources['icon'].pixmap(16, 16)
         self._labels['icon'].setPixmap(pixmap)
-        self._labels['description'].setText('Błąd: ' + str(cause))
+        # Resize description text to fit the label
+        description = 'Błąd: ' + str(cause)
+        font_metrics = self._labels['description'].fontMetrics()
+        dots_width = font_metrics.horizontalAdvance('...')
+        desired_width = self._labels['description'].width() - dots_width
+        description_length = len(description)
+        if desired_width > 0:
+            while font_metrics.horizontalAdvance(description, description_length) > desired_width:
+                description_length -= 1
+                if description_length < 1:
+                    break
+        if description_length == len(description):
+            self._labels['description'].setText(description)
+        else:
+            self._labels['description'].setText(description[:description_length] + '...')
 
     def clearState(self) -> None:
         '''
