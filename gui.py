@@ -12,6 +12,7 @@ from PyQt5.QtChart import QChart, QChartView, QLineSeries, QValueAxis, QDateTime
 
 from api import APIError
 from database import MatterData, SampleList, CachedAPI, DatabaseError
+NoneType = type(None)
 
 
 class HiDpiApplication(QApplication):
@@ -428,7 +429,7 @@ class Settings(QSettings):
 
     def value(
             self, key: str, default_value: Any = None,
-            value_type: type = type(None),
+            value_type: type = NoneType,
             set_if_missing: bool = False) -> None:
         if isinstance(None, value_type):
             return_value = super().value(key, default_value)
@@ -608,20 +609,49 @@ class CacheThread(QThread):
     succeeded: pyqtSignal = pyqtSignal()
     failed: pyqtSignal = pyqtSignal(Exception)
 
-    def __init__(self, api: CachedAPI) -> None:
+    def __init__(self, window: 'QueueSystemWindow') -> None:
         super().__init__()
-        self._api: CachedAPI = api
+        self._window: 'QueueSystemWindow' = window
 
     def run(self) -> None:
         '''
         Run the thread.
         (internal function)
         '''
+        api = self._window.api
         try:
-            self._api.update()
+            api.update()
             self.succeeded.emit()
         except Exception as exc:
             self.failed.emit(exc)
+
+
+class CacheRemainingThread(CacheThread):
+    '''
+    Subclass of CacheThread for asynchronously updating the cache data
+    of all offices except the currently chosen one.
+
+    Qt method and signal naming convention is preserved.
+    '''
+    def run(self) -> None:
+        '''
+        Run the thread.
+        (internal function)
+        '''
+        api = self._window.api
+        settings = self._window.settings
+        current_key = api.office_key
+        combo_box = self._window.combo_box
+        if not settings.value('check_box/update_only_current', value_type=bool):
+            for index in range(combo_box.count()):
+                key = combo_box.itemData(index)
+                if key not in (current_key, 'placeholder'):
+                    # Catch all exceptions in order to iterate through the whole
+                    # list of offices
+                    try:
+                        api.update(key)
+                    except Exception as exc:
+                        self.failed.emit(exc)
 
 
 class GUISetupThread(QThread):
@@ -643,17 +673,18 @@ class GUISetupThread(QThread):
     succeeded: pyqtSignal = pyqtSignal()
     failed: pyqtSignal = pyqtSignal(Exception)
 
-    def __init__(self, api: CachedAPI) -> None:
+    def __init__(self, window: 'QueueSystemWindow') -> None:
         super().__init__()
-        self._api: CachedAPI = api
+        self._window: 'QueueSystemWindow' = window
 
     def run(self) -> None:
         '''
         Run the thread.
         (internal function)
         '''
+        api = self._window.api
         try:
-            matter_list = self._api.get_matter_list()
+            matter_list = api.get_matter_list()
             self.gotMatterCount.emit(len(matter_list))
             # Generate distinct colors associated with matters
             colors = [QColor.fromHsl(
@@ -689,22 +720,23 @@ class GUIUpdateThread(QThread):
     succeeded: pyqtSignal = pyqtSignal()
     failed: pyqtSignal = pyqtSignal(Exception)
 
-    def __init__(self, api: CachedAPI, chart: QueueSystemChart) -> None:
+    def __init__(self, window: 'QueueSystemWindow') -> None:
         super().__init__()
-        self._api: CachedAPI = api
-        self._chart: QueueSystemChart = chart
+        self._window: 'QueueSystemWindow' = window
 
     def run(self) -> None:
         '''
         Run the thread.
         (internal function)
         '''
+        api = self._window.api
+        chart = self._window.chart
         try:
             matter_key_list = map(
-                lambda series: series.userData(), self._chart.series())
+                lambda series: series.userData(), chart.series())
             for index, matter_key in enumerate(matter_key_list):
                 if matter_key is not None:
-                    sample_list = self._api.get_sample_list(
+                    sample_list = api.get_sample_list(
                         matter_key['ordinal'], matter_key['group_id'])
                     self.gotSampleList.emit(index, sample_list)
             self.succeeded.emit()
@@ -768,9 +800,10 @@ class QueueSystemWindow(QMainWindow):
         self._timer.setInterval(api.cooldown * 1000)
         # Create the dictionary of threads
         self._threads: Dict[str, QThread] = {
-            'caching': CacheThread(api),
-            'displaying': GUIUpdateThread(api, self._chart),
-            'setting': GUISetupThread(api)
+            'caching': CacheThread(self),
+            'caching_other': CacheRemainingThread(self),
+            'displaying': GUIUpdateThread(self),
+            'setting': GUISetupThread(self)
         }
         # Connect caching thread's started signal to functions indicating
         # busyness of the application
@@ -783,6 +816,8 @@ class QueueSystemWindow(QMainWindow):
             thread.failed.connect(self._print_exception)
             thread.failed.connect(self._status.showError)
             thread.finished.connect(self.unsetCursor)
+        self._threads['caching_other'].failed.disconnect(self._status.showError)
+        self._threads['caching'].finished.connect(self._threads['caching_other'].start)
         # Connect GUI threads' succeeded signals to the status bar's success
         # showing method
         self._threads['displaying'].succeeded.connect(self._status.showSuccess)
@@ -867,7 +902,7 @@ class QueueSystemWindow(QMainWindow):
     def _prepare_widgets_for_updates(self) -> None:
         # Remove the connection to this callback
         try:
-            self._threads['caching'].finished.disconnect()
+            self._threads['caching'].finished.disconnect(self._threads['setting'].start)
         except TypeError:
             # If nothing is connected to the signal, an exception will be
             # raised
@@ -889,7 +924,8 @@ class QueueSystemWindow(QMainWindow):
         self._settings.setValue('window/position', self.pos())
 
     def _print_exception(self, exception: Exception) -> None:
-        print('Exception occured in GUI subthreads:')
+        time = QDateTime.currentDateTime().toString('hh:mm:ss')
+        print(f'[{time}] Exception occured in GUI subthreads:')
         print(exception)
 
     def close(self) -> None:
@@ -905,6 +941,13 @@ class QueueSystemWindow(QMainWindow):
         for thread in self._threads.values():
             thread.quit()
         super().close()
+
+    @property
+    def api(self) -> CachedAPI:
+        '''
+        Window's cached API object
+        '''
+        return self._api
 
     @property
     def combo_box(self) -> ComboBox:

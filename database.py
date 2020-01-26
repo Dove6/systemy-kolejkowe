@@ -629,23 +629,25 @@ class CachedAPI(WSStoreAPI):
         wait_random_min=500,
         wait_random_max=1000,
         stop_max_attempt_number=3)
-    def update(self) -> None:
+    def update(self, office_key: Optional[str] = None) -> None:
         '''
         Get data from API and store them in cache.
 
         Function retries 3 times on temporary database errors, waiting from
         0.5 to 1 second between retries.
         '''
+        if office_key is None:
+            office_key = self._office_key
         # Check time passed since last API call
-        passed_time = self._get_seconds_since_last_connection()
+        passed_time = self._get_seconds_since_last_connection(office_key)
         if passed_time is None or passed_time > self._cooldown:
             # If passed more than self._cooldown seconds or there is no
             # information about previous call, proceed with the update
-            matters_with_samples = self.get_matters_with_samples()
-            self._update_last_connection_time()
-            office_id = self._get_office_id(self._office_key)
+            matters_with_samples = self.get_matters_with_samples(office_key)
+            self._update_last_connection_time(office_key)
+            office_id = self._get_office_id(office_key)
             for matter in matters_with_samples:
-                matter_id = self._get_matter_id(matter['ordinal'], matter['group_id'])
+                matter_id = self._get_matter_id(matter['ordinal'], matter['group_id'], office_key)
                 if matter_id is None:
                     matter_id = self._store_matter(office_id, matter)
                 if not self._check_if_sample_exists(matter['time'], matter_id):
