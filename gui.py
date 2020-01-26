@@ -508,6 +508,14 @@ class StatusBar(QStatusBar):
                     lambda name, state: settings.setValue(
                         'check_box/' + name, bool(state)), name))
                 check_box.setEnabled(True)
+            def last_closed_callback(state):
+                if state:
+                    combo_index = self.window().combo_box.currentIndex()
+                    if self.window().combo_box.itemData(0) == 'placeholder':
+                        combo_index -= 1
+                    self._settings.setValue('combo_box/index', combo_index)
+            self._check_boxes['restore_last_closed'].stateChanged.connect(
+                last_closed_callback)
         else:
             # If Settings object is removed, freeze check boxes and clear
             # their callbacks
@@ -863,6 +871,9 @@ class QueueSystemWindow(QMainWindow):
         # (responsible for resetting table names and reconnecting series with
         # them)
         self._combo.currentIndexChanged.connect(self._setup_widgets_content)
+        if self._settings.value('check_box/restore_last_closed', value_type=bool):
+            index = self._settings.value('combo_box/index', -1, value_type=int, set_if_missing=True)
+            self._combo.setCurrentIndex(index + 1)
 
     def _setup_widgets_content(self, item_index: int) -> None:
         '''
@@ -875,7 +886,7 @@ class QueueSystemWindow(QMainWindow):
         # Stop timer to stop updates of widgets
         self._timer.stop()
         # If placeholder exists, remove it
-        if self._combo.itemData(0) == 'placeholder':
+        if self._combo.itemData(0) == 'placeholder' and item_index != 0:
             # Disconnect currentIndexChanged signal not to trigger it during
             # removement
             self._combo.currentIndexChanged.disconnect()
@@ -898,6 +909,8 @@ class QueueSystemWindow(QMainWindow):
         self._api.office_key = self._combo.itemData(item_index)
         # Refresh database data and setup the widgets after it
         self._threads['caching'].start()
+        if self._settings.value('check_box/restore_last_closed', value_type=bool):
+            self._settings.setValue('combo_box/index', item_index)
 
     def _prepare_widgets_for_updates(self) -> None:
         # Remove the connection to this callback
