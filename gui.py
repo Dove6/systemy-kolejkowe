@@ -1,3 +1,6 @@
+from random import shuffle, randint
+from typing import Union, Optional, Dict, List, Any
+
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QComboBox, QTableWidget, QVBoxLayout, QWidget,
     QAbstractItemView, QHeaderView, QTableWidgetItem, QStatusBar, QLabel, QSizeGrip
@@ -5,13 +8,9 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, QTimer, QDateTime, QPointF, QItemSelection, QThread, pyqtSignal, QSize
 from PyQt5.QtGui import QPainter, QColor, QFont, QIcon, QMovie
 from PyQt5.QtChart import QChart, QChartView, QLineSeries, QValueAxis, QDateTimeAxis
-from random import shuffle, randint
-
-from typing import Union, Optional, Dict, List, Tuple, Any
-from retrying import retry
 
 from api import APIError
-from database import MatterData, SampleList, CachedAPI
+from database import MatterData, SampleList, CachedAPI, DatabaseError
 
 
 class HiDpiApplication(QApplication):
@@ -138,7 +137,7 @@ class QueueSystemChart(QChart):
         :param count: Count of series to set.
         '''
         self.removeAllSeries()
-        for i in range(count + 1):
+        for _ in range(count + 1):
             series = QueueSystemSeries()
             pen = series.pen()
             pen.setWidth(4)
@@ -192,7 +191,7 @@ class QueueSystemChart(QChart):
             # If index is None, reset the actual topmost series data
             self._top_series = index
             series[-1].replace([])
-        elif index < len(self.series()) and index >= 0:
+        elif 0 <= index < len(self.series()):
             # If index exists, style the actual topmost series to resemble
             # the one portrayed as topmost
             self._top_series = index
@@ -236,7 +235,7 @@ class QueueSystemSeries(QLineSeries):
                 time.toMSecsSinceEpoch(),
                 sample['queue_length']
             )
-            if type(self._user_data) is dict:
+            if isinstance(self._user_data, dict):
                 name = self._user_data.get('name')
             else:
                 name = None
@@ -334,9 +333,7 @@ class StatusBar(QStatusBar):
     def __init__(self) -> None:
         super().__init__()
         # Get rid of size grip
-        for child in self.children():
-            if type(child) is QSizeGrip:
-                self.removeWidget(child)
+        self.setSizeGripEnabled(False)
         # Load and prepare required resources
         self._resources = {
             'ok': QIcon('img/ok.png'),
@@ -387,7 +384,7 @@ class StatusBar(QStatusBar):
             self._labels['icon'].setPixmap(
                 self._resources['web_error'].pixmap(16, 16))
             self._labels['description'].setText('Błąd: ' + str(cause))
-        elif isinstance(cause, Exception):
+        elif isinstance(cause, DatabaseError):
             # Cache-related error
             self._labels['icon'].setPixmap(
                 self._resources['db_error'].pixmap(16, 16))
@@ -396,7 +393,7 @@ class StatusBar(QStatusBar):
             # Other errors
             self._labels['icon'].setPixmap(
                 self._resources['error'].pixmap(16, 16))
-            self._labels['description'].setText('Błąd: ' + cause)
+            self._labels['description'].setText('Błąd: ' + str(cause))
 
     def clear(self) -> None:
         '''
@@ -509,7 +506,7 @@ class QueueSystemTable(QTableWidget):
             index = selected_indexes[0].row()
         else:
             index = None
-        self.window()._chart.setTopSeriesIndex(index)
+        self.window().chart.setTopSeriesIndex(index)
 
 
 class CacheThread(QThread):
@@ -531,11 +528,15 @@ class CacheThread(QThread):
         self._api: CachedAPI = api
 
     def run(self) -> None:
+        '''
+        Run the thread.
+        (internal function)
+        '''
         try:
             self._api.update()
             self.succeeded.emit()
-        except Exception as e:
-            self.failed.emit(e)
+        except Exception as exc:
+            self.failed.emit(exc)
 
 
 class GUISetupThread(QThread):
@@ -562,6 +563,10 @@ class GUISetupThread(QThread):
         self._api: CachedAPI = api
 
     def run(self) -> None:
+        '''
+        Run the thread.
+        (internal function)
+        '''
         try:
             matter_list = self._api.get_matter_list()
             self.gotMatterCount.emit(len(matter_list))
@@ -575,8 +580,8 @@ class GUISetupThread(QThread):
             for index, matter in enumerate(matter_list):
                 self.gotMatter.emit(index, matter, colors[index])
             self.succeeded.emit()
-        except Exception as e:
-            self.failed.emit(e)
+        except Exception as exc:
+            self.failed.emit(exc)
 
 
 class GUIUpdateThread(QThread):
@@ -605,6 +610,10 @@ class GUIUpdateThread(QThread):
         self._chart: QueueSystemChart = chart
 
     def run(self) -> None:
+        '''
+        Run the thread.
+        (internal function)
+        '''
         try:
             matter_key_list = map(
                 lambda series: series.userData(), self._chart.series())
@@ -614,8 +623,8 @@ class GUIUpdateThread(QThread):
                         matter_key['ordinal'], matter_key['group_id'])
                     self.gotSampleList.emit(index, sample_list)
             self.succeeded.emit()
-        except Exception as e:
-            self.failed.emit(e)
+        except Exception as exc:
+            self.failed.emit(exc)
 
 
 class QueueSystemWindow(QMainWindow):

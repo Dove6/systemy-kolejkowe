@@ -4,8 +4,8 @@ from urllib.parse import urlencode
 from urllib.error import URLError
 import socket
 import json
-
 from typing import Union, Optional, Dict, List, Tuple, Any
+
 from retrying import retry
 
 OfficeData = Dict[str, str]
@@ -53,7 +53,7 @@ class OfficeListParser(HTMLParser):
             # Prepare subdictionary for comparing with sought_attrs
             checked_attrs = {
                 key: attrs.get(key)
-                for key in sought_attrs.keys()
+                for key in sought_attrs
                 if attrs.get(key) is not None
             }
             # If attributes values match, increment parsing progress indicator
@@ -93,7 +93,6 @@ class OfficeListParser(HTMLParser):
 
         :param tag: HTML ending tag name
         '''
-        pass
 
     def handle_startendtag(
             self, tag: str, attrs: List[Tuple[str, str]]) -> None:
@@ -106,7 +105,6 @@ class OfficeListParser(HTMLParser):
         :param tag: HTML tag name
         :param attrs: HTML tag attributes (key, value) pairs list
         '''
-        pass
 
     def reset(self) -> None:
         '''
@@ -165,26 +163,26 @@ class APIError(Exception):
     '''
     Exception indicating errors during fetching API data.
     '''
-    pass
 
 
 class APIConnectionError(APIError):
     '''
     Exception indicating errors during sending API request.
     '''
-    pass
 
 
 class APIResponseError(APIError):
     '''
     Exception indicating unexpected API response.
     '''
-    pass
 
 
 def is_connection_error(exception) -> bool:
     '''
     Check if provided exception is related to connecting to API.
+
+    :param exception: Exception to check
+    :returns: True if exception is connection-related, False otherwise
     '''
     return isinstance(exception, APIConnectionError)
 
@@ -249,12 +247,12 @@ class WSStoreAPI:
                 append_parameters(self._api_urls['json'], parameters),
                 timeout=5)
             response = request.read().decode('utf-8').strip()
-        except (URLError, socket.timeout, socket.gaierror):
-            raise APIConnectionError('Cannot connect to the API')
+        except (URLError, socket.timeout, socket.gaierror) as exc:
+            raise APIConnectionError('Cannot connect to the API') from e
         # Parse fetched data
         data = json.loads(response)
         # Raise an error if API returned error response
-        if type(data['result']) == str:
+        if isinstance(data['result'], str):
             if data.get('error') is not None:
                 raise APIResponseError(data['error'])
             else:
@@ -285,8 +283,8 @@ class WSStoreAPI:
         try:
             request = urlopen(self._api_urls['html'], timeout=5)
             response = request.read().decode('utf-8')
-        except (URLError, socket.timeout, socket.gaierror):
-            raise APIConnectionError('Cannot connect to the API')
+        except (URLError, socket.timeout, socket.gaierror) as exc:
+            raise APIConnectionError('Cannot connect to the API') from exc
         # Parse fetched data
         parser = OfficeListParser()
         parser.feed(response)
@@ -306,17 +304,17 @@ class WSStoreAPI:
         # Fetch and parse JSON data
         data = self._get_json_data(office_key)
         # Parse and reorganize data according to internal data format
-        return sorted([{
-            'name': str(group['nazwaGrupy']),
-            'ordinal': int(group['lp']) if group['lp'] is not None else None,
-            'group_id': int(group['idGrupy']),
-            'queue_length': int(group['liczbaKlwKolejce']),
-            'open_counters': int(group['liczbaCzynnychStan']),
-            'current_number': str(group['aktualnyNumer']),
-            'time': str(data['result']['date'] + ' ' + data['result']['time'])
-        }
-            for group in data['result']['grupy']
-        ], key=lambda matter: matter['name'])
+        return sorted(
+            [{
+                'name': str(group['nazwaGrupy']),
+                'ordinal': int(group['lp']) if group['lp'] is not None else None,
+                'group_id': int(group['idGrupy']),
+                'queue_length': int(group['liczbaKlwKolejce']),
+                'open_counters': int(group['liczbaCzynnychStan']),
+                'current_number': str(group['aktualnyNumer']),
+                'time': str(data['result']['date'] + ' ' + data['result']['time'])
+            } for group in data['result']['grupy']],
+            key=lambda matter: matter['name'])
 
     #
     # Properties
@@ -334,7 +332,7 @@ class WSStoreAPI:
 
     @office_key.setter
     def office_key(self, value: str) -> None:
-        if type(value) is str:
+        if isinstance(value, str):
             self._office_key = value
         else:
             raise TypeError('Office key must be a string')

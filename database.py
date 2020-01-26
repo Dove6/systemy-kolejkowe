@@ -1,11 +1,11 @@
 import sqlite3
-from api import WSStoreAPI
-
 from types import TracebackType
 from typing import Union, Optional, Dict, List, Tuple, Any
+
 from retrying import retry
 
-from api import OfficeData, OfficeList
+from api import WSStoreAPI, OfficeList
+
 MatterData = Dict[str, Union[str, Optional[int]]]
 MatterList = List[MatterData]
 SampleData = Dict[str, Union[str, int]]
@@ -16,7 +16,38 @@ class DatabaseError(Exception):
     '''
     Exception indicating errors during accessing the underlying database.
     '''
-    pass
+
+
+class DatabaseInsertionError(DatabaseError):
+    '''
+    Exception raised on insertions affecting the database relational
+    integrity. Not worth retrying.
+    '''
+
+
+class DatabaseTemporaryError(DatabaseError):
+    '''
+    Exception caused by simultaneous access of too many clients or other
+    temporary origin.
+    '''
+
+
+class DatabasePersistentError(DatabaseError):
+    '''
+    Exception indicating serious errors preventing the application from
+    correct functioning (usually caused by errors in programming).
+    '''
+
+
+def is_temporary_database_error(exception):
+    '''
+    Check, if provided exception is database-related, temporary and worth
+    retrying.
+
+    :param exception: Exception to check
+    :returns: True if exception is meets the criteria, False otherwise
+    '''
+    return isinstance(exception, DatabaseTemporaryError)
 
 
 class SQLite3Cursor:
@@ -71,6 +102,26 @@ class SQLite3Cursor:
         else:
             self._connection.rollback()
         self._connection.close()
+        # If error is database-related, raise appropriate abstract exception
+        if isinstance(exc_value, sqlite3.DatabaseError):
+            exc_string = str(exc_value.args[0]).lower()
+            if isinstance(exc_value, sqlite3.OperationalError):
+                if exc_string.find('locked') > -1:
+                    raise DatabaseTemporaryError(
+                        'Temporary operational error') from exc_value
+                else:
+                    raise DatabasePersistentError(
+                        'Fatal database error') from exc_value
+            elif isinstance(exc_value, sqlite3.IntegrityError):
+                if exc_string.find('constraint failed') > -1:
+                    raise DatabaseInsertionError(
+                        'Integrity check failed') from exc_value
+                else:
+                    raise DatabasePersistentError(
+                        'Fatal database error') from exc_value
+            else:
+                raise DatabasePersistentError(
+                    'Fatal database error') from exc_value
         return False
 
 
@@ -182,7 +233,7 @@ class CachedAPI(WSStoreAPI):
         # Check argument's validity
         if office_key is None:
             raise AssertionError('Office key not provided')
-        if type(office_key) is not str:
+        if not isinstance(office_key, str):
             raise TypeError('Office key has to be of type str')
         # Check database for matching office entry
         with SQLite3Cursor(self._filename) as cursor:
@@ -216,12 +267,12 @@ class CachedAPI(WSStoreAPI):
         # Check arguments' validity
         if office_key is None:
             raise AssertionError('Office key not provided')
-        if type(matter_ordinal) not in [int, type(None)]:
+        if not isinstance(matter_ordinal, (int, type(None))):
             try:
                 matter_ordinal = int(matter_ordinal)
             except (ValueError, TypeError):
                 raise TypeError("Non-None matter's ordinal must be convertible to int")
-        if type(matter_group_id) is not int:
+        if not isinstance(matter_group_id, int):
             try:
                 matter_group_id = int(matter_group_id)
             except (ValueError, TypeError):
@@ -263,7 +314,7 @@ class CachedAPI(WSStoreAPI):
         :returns: True if a sample exists, False otherwise
         '''
         # Check arguments' validity
-        if type(time) is not str:
+        if not isinstance(time, str):
             raise TypeError('Time has to be of type str')
         # Check database for matching matter entry
         with SQLite3Cursor(self._filename) as cursor:
@@ -305,8 +356,7 @@ class CachedAPI(WSStoreAPI):
                 - STRFTIME('%s', time))
                 FROM last_connection
                 WHERE office_id = ?
-                ''', (office_id,)
-            )
+                ''', (office_id,))
             # Return result of query
             return cursor.fetchone()[0]
 
@@ -409,8 +459,7 @@ class CachedAPI(WSStoreAPI):
                 matter['ordinal'],
                 matter['group_id'],
                 office_id
-            ) for matter in matter_list]
-            )
+            ) for matter in matter_list])
 
     def _store_sample(self, matter_id: int, sample: SampleData) -> None:
         '''
@@ -447,7 +496,7 @@ class CachedAPI(WSStoreAPI):
             samples are associated with
         :param matter_list: List of time samples to store
         '''
-        matter_id = self._get_matter_id(office_key, matter_ordinal, matter_group_id)
+        matter_id = self._get_matter_id(matter_ordinal, matter_group_id, office_key)
         with SQLite3Cursor(self._filename) as cursor:
             cursor.executemany(
                 '''
@@ -463,12 +512,20 @@ class CachedAPI(WSStoreAPI):
     # Public methods
     #
 
+    @retry(
+        retry_on_exception=is_temporary_database_error,
+        wait_random_min=500,
+        wait_random_max=1000,
+        stop_max_attempt_number=3)
     def get_office_list(self) -> OfficeList:
         '''
         Retrieve cached office identifiers list if available, otherwise
         fetch it using API.
 
         The list can be used to get office-specific data.
+
+        Function retries 3 times on temporary database errors, waiting from
+        0.5 to 1 second between retries.
 
         :returns: Office identifiers list
         '''
@@ -488,6 +545,11 @@ class CachedAPI(WSStoreAPI):
             self._store_office_list(result_list)
             return result_list
 
+    @retry(
+        retry_on_exception=is_temporary_database_error,
+        wait_random_min=500,
+        wait_random_max=1000,
+        stop_max_attempt_number=3)
     def get_matter_list(
             self, office_key: Optional[str] = None) -> MatterList:
         '''
@@ -495,6 +557,9 @@ class CachedAPI(WSStoreAPI):
         fetch it using API.
 
         The list can be used to get matter-specific queue data.
+
+        Function retries 3 times on temporary database errors, waiting from
+        0.5 to 1 second between retries.
 
         :returns: Administrative matter description list
         '''
@@ -520,12 +585,20 @@ class CachedAPI(WSStoreAPI):
             } for name, ordinal, group_id in result]
         return result_list
 
+    @retry(
+        retry_on_exception=is_temporary_database_error,
+        wait_random_min=500,
+        wait_random_max=1000,
+        stop_max_attempt_number=3)
     def get_sample_list(
             self, matter_ordinal: Optional[int], matter_group_id: int,
             office_key: Optional[str] = None) -> SampleList:
         '''
         Retrieve all cached time samples associated with given administrative
         matter.
+
+        Function retries 3 times on temporary database errors, waiting from
+        0.5 to 1 second between retries.
 
         :param matter_ordinal: Requested matter's ordinal number
         :param matter_group_id: Requested matter's group ID
@@ -551,13 +624,21 @@ class CachedAPI(WSStoreAPI):
             } for queue_length, open_counters, current_number, time in result]
         return result_list
 
+    @retry(
+        retry_on_exception=is_temporary_database_error,
+        wait_random_min=500,
+        wait_random_max=1000,
+        stop_max_attempt_number=3)
     def update(self) -> None:
         '''
         Get data from API and store them in cache.
+
+        Function retries 3 times on temporary database errors, waiting from
+        0.5 to 1 second between retries.
         '''
         # Check time passed since last API call
         passed_time = self._get_seconds_since_last_connection()
-        if passed_time > self._cooldown or passed_time is None:
+        if passed_time is None or passed_time > self._cooldown:
             # If passed more than self._cooldown seconds or there is no
             # information about previous call, proceed with the update
             matters_with_samples = self.get_matters_with_samples()
@@ -586,7 +667,7 @@ class CachedAPI(WSStoreAPI):
 
     @cooldown.setter
     def cooldown(self, value: int) -> None:
-        if type(value) is int:
+        if isinstance(value, int):
             self._cooldown = value
             if value < 30:
                 print('Warning: too short API polling interval')
