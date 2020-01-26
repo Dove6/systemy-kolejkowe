@@ -1,8 +1,12 @@
 nppBackup
 garbage
 __pycache__
+Include
+Lib
+Scripts
 login
 apikey
 cache.db
 settings.ini
 .pylintrc
+pyvenv.cfg
