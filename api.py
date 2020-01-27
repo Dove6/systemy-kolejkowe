@@ -144,6 +144,13 @@ def append_parameters(url: str, params: Dict[str, str]) -> str:
     :param params: Query parameters to be appended
     :returns: Resulting URL
     '''
+    # Check arguments' correctness
+    if url == '':
+        # Raise exception on missing URL
+        raise ValueError('No URL provided')
+    elif params == {}:
+        # If no parameters were supplied, return unchanged URL
+        return url
     # URL query string begins after the first question mark (if present)
     query_beginning = url.find('?')
     url_before_query = ''
