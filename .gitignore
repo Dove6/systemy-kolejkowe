@@ -1,5 +1,6 @@
 nppBackup
 garbage
+.pytest.cache
 __pycache__
 Include
 Lib

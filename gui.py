@@ -59,7 +59,12 @@ class HiDpiApplication(QApplication):
         # https://leomoon.com/journal/python/high-dpi-scaling-in-pyqt5/
         QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
         QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
-        QGuiApplication.setHighDpiScaleFactorRoundingPolicy(Qt.HighDpiScaleFactorRoundingPolicy.Round)
+        try:
+            QGuiApplication.setHighDpiScaleFactorRoundingPolicy(Qt.HighDpiScaleFactorRoundingPolicy.Round)
+        except AttributeError:
+            # For reverse compatibility: this option has been introduced
+            # in PyQt 5.14
+            pass
 
         super().__init__(*args, **kwargs)
 
@@ -815,6 +820,9 @@ class QueueSystemWindow(QMainWindow):
             *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self._api: CachedAPI = api
+        # Set window's icon and title
+        self.setWindowIcon(QIcon('img/icon.png'))
+        self.setWindowTitle('Systemy kolejkowe')
         # Configure settings file and load saved application's settings:
         # window's size and position
         self._settings: IniSettings = IniSettings()
