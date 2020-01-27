@@ -172,14 +172,16 @@ class CachedAPI(WSStoreAPI):
         (internal function)
         '''
         with SQLite3Cursor(self._filename) as cursor:
-            cursor.execute('''
+            cursor.execute(
+                '''
                 CREATE TABLE IF NOT EXISTS offices (
                     id INTEGER PRIMARY KEY,
                     name TEXT,
                     key TEXT UNIQUE
                 )
-            ''')
-            cursor.execute('''
+                ''')
+            cursor.execute(
+                '''
                 CREATE TABLE IF NOT EXISTS matters (
                     id INTEGER PRIMARY KEY,
                     name TEXT,
@@ -190,8 +192,9 @@ class CachedAPI(WSStoreAPI):
                         REFERENCES offices (id),
                     UNIQUE (ordinal, group_id, office_id)
                 )
-            ''')
-            cursor.execute('''
+                ''')
+            cursor.execute(
+                '''
                 CREATE TABLE IF NOT EXISTS samples (
                     time TEXT NOT NULL,
                     matter_id INTEGER NOT NULL,
@@ -202,15 +205,16 @@ class CachedAPI(WSStoreAPI):
                     FOREIGN KEY (matter_id)
                         REFERENCES matters (id)
                 )
-            ''')
-            cursor.execute('''
+                ''')
+            cursor.execute(
+                '''
                 CREATE TABLE IF NOT EXISTS last_connection (
                     office_id INTEGER PRIMARY KEY,
                     time TEXT,
                     FOREIGN KEY (office_id)
                         REFERENCES offices (id)
                 )
-            ''')
+                ''')
 
     def _remove_old_samples(self) -> None:
         '''
@@ -218,10 +222,11 @@ class CachedAPI(WSStoreAPI):
         (internal function)
         '''
         with SQLite3Cursor(self._filename) as cursor:
-            cursor.execute('''
+            cursor.execute(
+                '''
                 DELETE FROM samples
                 WHERE DATETIME(time, 'utc') < DATETIME('now', '-1 hour')
-            ''')
+                ''')
 
     #
     # Private methods used internally

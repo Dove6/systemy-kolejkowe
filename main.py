@@ -15,7 +15,7 @@ api_urls = {
 # Create cached API object
 api = CachedAPI(api_urls['html'], api_urls['json'], 'cache.db')
 # and set minimum time between API requests (in seconds)
-api.cooldown = 5
+api.cooldown = 60
 
 # Initialize GUI
 application = HiDpiApplication([])

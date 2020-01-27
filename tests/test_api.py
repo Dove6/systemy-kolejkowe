@@ -122,7 +122,7 @@ def test_append_function_url_and_params(url, params, expected_result):
 @pytest.fixture
 def api_instance():
     '''
-    Returns OfficeListParser instance using the prepared data from Pastebin.
+    Returns WSStoreAPI instance using the prepared data from Pastebin.
     '''
     api_urls = {
         'html': 'https://pastebin.com/raw/jaQXNr23',

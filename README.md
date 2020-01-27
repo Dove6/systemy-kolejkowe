@@ -2,9 +2,9 @@
 
 Prezentacja bieżących danych z systemów kolejkowych jednostek Urzędu m.st. Warszawy i Dzielnic.
 
-# Projekt interfejsu graficznego
+# Interfejs graficzny
 
-![Projekt GUI](design/GUI.png "Wizualizacja działania aplikacji")
+![Screenshot](docs/scrrenshot.png "Zrzut ekranu prezentujący działającą aplikację")
 
 Aplikacja po wybraniu urzędu z listy pokazuje aktualny stan jego systemu kolejkowego.    
 Na wykresie liniowym wizualizowana jest zmiana liczebności kolejek w czasie.    
