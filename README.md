@@ -1,7 +1,8 @@
 # systemy-kolejkowe
 
 Prezentacja bieżących danych z systemów kolejkowych jednostek Urzędu m.st. Warszawy i Dzielnic.    
-Projekt zrealizowany został w języku Python w ramach przedmiotu "Podstawy informatyki i programowania" w pierwszym semestrze 2019/20.
+Projekt zrealizowany został w języku Python w ramach przedmiotu "Podstawy informatyki i programowania" w pierwszym semestrze 2019/20.    
+Do pobrania [tutaj](https://github.com/Dove6/systemy-kolejkowe/releases/download/1.0.0/systemy-kolejkowe.zip).
 
 # Interfejs graficzny
 
