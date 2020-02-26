@@ -2,13 +2,10 @@ nppBackup
 garbage
 .pytest.cache
 __pycache__
-Include
-Lib
-Scripts
+venv
 login
 apikey
 cache.db
 settings.ini
 .pylintrc
-pyvenv.cfg
 gotowe

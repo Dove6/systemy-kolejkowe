@@ -1,6 +1,7 @@
 # systemy-kolejkowe
 
-Prezentacja bieżących danych z systemów kolejkowych jednostek Urzędu m.st. Warszawy i Dzielnic.
+Prezentacja bieżących danych z systemów kolejkowych jednostek Urzędu m.st. Warszawy i Dzielnic.    
+Projekt zrealizowany został w języku Python w ramach przedmiotu "Podstawy informatyki i programowania" w pierwszym semestrze 2019/20.
 
 # Interfejs graficzny
 
